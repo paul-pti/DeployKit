@@ -3,8 +3,21 @@
 A self-service internal developer platform: point it at a GitHub repository, and DeployKit builds, ships and
 runs the app on Kubernetes, with deployment history, logs and rollback.
 
-> **Status: Phase 1 (foundation) complete.** The backend health endpoint, PostgreSQL schema, and a dashboard
-> shell exist. Project management, Kubernetes, deployments, auth and AWS come in later phases (see [Roadmap](#roadmap)).
+> **Status: Phase 2 (project management) complete.** Projects can be created, listed, viewed and deleted from the
+> API and the dashboard. Kubernetes, deployments, auth and AWS come in later phases (see [Roadmap](#roadmap)).
+
+## API
+
+| Method | Path | Success | Errors |
+|---|---|---|---|
+| `GET` | `/api/health` | 200 `{"status":"UP"}` | |
+| `POST` | `/api/projects` | 201 + `Location` | 400 validation (`errors` per field), 409 duplicate name |
+| `GET` | `/api/projects` | 200, newest first | |
+| `GET` | `/api/projects/{id}` | 200 | 400 malformed id, 404 |
+| `DELETE` | `/api/projects/{id}` | 204 | 400 malformed id, 404 |
+
+`POST /api/projects` body: `name` (required, ≤100, unique), `repositoryUrl` (required, `https://github.com/owner/repo`),
+`branch` (optional, defaults to `main`), `port` (required, 1-65535). Errors are RFC 7807 `application/problem+json`.
 
 ## Architecture
 
@@ -119,7 +132,8 @@ docker run --rm -v "$PWD/backend":/w -v deploykit-m2:/root/.m2 -w /w maven:3.9-e
 cd frontend && npm run lint && npm run build
 ```
 
-Phase 1 covers the health controller and global exception handler (MockMvc). Testcontainers integration tests,
+Backend tests cover the health controller, global exception handler, `ProjectService` (Mockito) and
+`ProjectController` (MockMvc: validation, 201/204/400/404/409). Testcontainers integration tests,
 Vitest and Playwright come in Phase 10.
 
 ## Troubleshooting
@@ -132,8 +146,8 @@ Vitest and Playwright come in Phase 10.
 
 ## Roadmap
 
-1. ~~Foundation~~ (this phase)
-2. Project management API + UI
+1. ~~Foundation~~
+2. ~~Project management API + UI~~
 3. Kubernetes integration + Helm chart
 4. Deployment engine
 5. GitHub Actions build pipeline
