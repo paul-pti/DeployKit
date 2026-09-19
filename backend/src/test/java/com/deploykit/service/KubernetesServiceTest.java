@@ -8,6 +8,7 @@ import com.deploykit.dto.AppDeploymentSpec;
 import com.deploykit.dto.DeploymentStatusInfo;
 import com.deploykit.dto.PodInfo;
 import com.deploykit.exception.ResourceNotFoundException;
+import io.fabric8.kubernetes.api.model.NamespaceBuilder;
 import io.fabric8.kubernetes.api.model.Pod;
 import io.fabric8.kubernetes.api.model.PodBuilder;
 import io.fabric8.kubernetes.api.model.apps.Deployment;
@@ -64,6 +65,30 @@ class KubernetesServiceTest {
         assertThat(container.getImage()).isEqualTo("nginx:1.27");
         assertThat(container.getPorts().get(0).getContainerPort()).isEqualTo(8080);
         assertThat(container.getEnv()).extracting("name").containsExactly("A", "B");
+    }
+
+    @Test
+    void deleteNamespaceRemovesANamespaceCreatedByDeployKit() {
+        service.ensureNamespace("demo-ns");
+
+        service.deleteNamespace("demo-ns");
+
+        assertThat(client.namespaces().withName("demo-ns").get()).isNull();
+    }
+
+    @Test
+    void deleteNamespaceRefusesToTouchNamespacesItDidNotCreate() {
+        client.namespaces().resource(new NamespaceBuilder().withNewMetadata().withName("kube-foreign").endMetadata().build())
+                .create();
+
+        service.deleteNamespace("kube-foreign");
+
+        assertThat(client.namespaces().withName("kube-foreign").get()).isNotNull();
+    }
+
+    @Test
+    void deleteNamespaceIgnoresAMissingNamespace() {
+        service.deleteNamespace("does-not-exist");
     }
 
     @Test

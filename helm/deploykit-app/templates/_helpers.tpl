@@ -18,6 +18,18 @@ app.kubernetes.io/managed-by: deploykit
 helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | quote }}
 {{- end -}}
 
+{{/* Probe handler: a TCP check on the container port, or an HTTP GET when probes.type is "http". */}}
+{{- define "deploykit-app.probeAction" -}}
+{{- if eq .Values.probes.type "http" -}}
+httpGet:
+  path: {{ .Values.probes.path }}
+  port: http
+{{- else -}}
+tcpSocket:
+  port: http
+{{- end -}}
+{{- end -}}
+
 {{- define "deploykit-app.secretName" -}}
 {{- if .Values.existingSecret -}}{{ .Values.existingSecret }}{{- else -}}{{ include "deploykit-app.fullname" . }}{{- end -}}
 {{- end -}}

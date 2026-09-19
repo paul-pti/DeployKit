@@ -1,4 +1,5 @@
 import { Link, useNavigate, useParams } from 'react-router-dom'
+import { DeployPanel } from '../features/deployments/DeployPanel'
 import { useDeleteProject, useProject } from '../hooks/useProjects'
 import { parseApiError } from '../lib/apiError'
 
@@ -48,7 +49,7 @@ export function ProjectDetailPage() {
           >
             Delete project
           </button>
-          <p className="mt-6 text-slate-600">Deployments and logs will appear here in later phases.</p>
+          <DeployPanel projectId={project.id} />
         </>
       )}
     </section>

@@ -1,11 +1,15 @@
 package com.deploykit.service;
 
+import com.deploykit.domain.DeploymentStatus;
 import com.deploykit.domain.Project;
 import com.deploykit.dto.CreateProjectRequest;
 import com.deploykit.dto.ProjectResponse;
+import com.deploykit.exception.ConflictException;
 import com.deploykit.exception.DuplicateResourceException;
 import com.deploykit.exception.ResourceNotFoundException;
 import com.deploykit.mapper.ProjectMapper;
+import com.deploykit.repository.DeploymentRepository;
+import com.deploykit.repository.EnvironmentRepository;
 import com.deploykit.repository.ProjectRepository;
 import java.util.List;
 import java.util.UUID;
@@ -23,10 +27,18 @@ public class ProjectService {
 
     private final ProjectRepository projectRepository;
     private final ProjectMapper projectMapper;
+    private final DeploymentRepository deploymentRepository;
+    private final EnvironmentRepository environmentRepository;
+    private final KubernetesService kubernetesService;
 
-    public ProjectService(ProjectRepository projectRepository, ProjectMapper projectMapper) {
+    public ProjectService(ProjectRepository projectRepository, ProjectMapper projectMapper,
+                          DeploymentRepository deploymentRepository, EnvironmentRepository environmentRepository,
+                          KubernetesService kubernetesService) {
         this.projectRepository = projectRepository;
         this.projectMapper = projectMapper;
+        this.deploymentRepository = deploymentRepository;
+        this.environmentRepository = environmentRepository;
+        this.kubernetesService = kubernetesService;
     }
 
     @Transactional
@@ -60,8 +72,23 @@ public class ProjectService {
 
     @Transactional
     public void delete(UUID id) {
-        projectRepository.delete(findOrThrow(id));
+        Project project = findOrThrow(id);
+        if (deploymentRepository.existsByProjectIdAndStatusIn(id, DeploymentStatus.ACTIVE)) {
+            throw new ConflictException("Cannot delete a project while a deployment is in progress");
+        }
+        environmentRepository.findAllByProjectId(id)
+                .forEach(environment -> removeNamespace(environment.getKubernetesNamespace()));
+        projectRepository.delete(project);
         log.info("Deleted project id={}", id);
+    }
+
+    /** Best effort: an unreachable cluster must not make a project undeletable, but the leak is logged. */
+    private void removeNamespace(String namespace) {
+        try {
+            kubernetesService.deleteNamespace(namespace);
+        } catch (RuntimeException e) {
+            log.warn("Could not delete Kubernetes namespace {}; remove it manually", namespace, e);
+        }
     }
 
     private Project findOrThrow(UUID id) {

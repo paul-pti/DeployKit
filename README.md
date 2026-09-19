@@ -3,9 +3,9 @@
 A self-service internal developer platform: point it at a GitHub repository, and DeployKit builds, ships and
 runs the app on Kubernetes, with deployment history, logs and rollback.
 
-> **Status: Phase 3 (Kubernetes integration) complete.** Projects can be managed from the API and dashboard, a local
-> kind cluster and a generic Helm chart exist, and the backend has a `KubernetesService` (create/update deployments,
-> status, pods, logs). The deployment engine, auth and AWS come in later phases (see [Roadmap](#roadmap)).
+> **Status: Phase 4 (deployment engine) complete.** A project can be deployed to Kubernetes through Helm from the API
+> and the dashboard, with the rollout monitored and every step logged. The image build pipeline (GitHub Actions),
+> history, logs, rollback, auth and AWS come in later phases (see [Roadmap](#roadmap)).
 
 ## API
 
@@ -15,10 +15,49 @@ runs the app on Kubernetes, with deployment history, logs and rollback.
 | `POST` | `/api/projects` | 201 + `Location` | 400 validation (`errors` per field), 409 duplicate name |
 | `GET` | `/api/projects` | 200, newest first | |
 | `GET` | `/api/projects/{id}` | 200 | 400 malformed id, 404 |
-| `DELETE` | `/api/projects/{id}` | 204 | 400 malformed id, 404 |
+| `DELETE` | `/api/projects/{id}` | 204, also deletes the project's Kubernetes namespace | 400 malformed id, 404, 409 deployment in progress |
+| `POST` | `/api/projects/{id}/deploy` | 202 + `Location`, deployment `PENDING` | 400 invalid image, 404, 409 deployment already in progress, 503 queue full |
+| `GET` | `/api/deployments/{id}` | 200 | 400 malformed id, 404 |
 
 `POST /api/projects` body: `name` (required, ≤100, unique), `repositoryUrl` (required, `https://github.com/owner/repo`),
 `branch` (optional, defaults to `main`), `port` (required, 1-65535). Errors are RFC 7807 `application/problem+json`.
+
+`POST /api/projects/{id}/deploy` takes an optional body: `image` (full reference, e.g. `nginx:1.27-alpine`) or
+`commitSha`. Without a body the image is `ghcr.io/<owner>/<repo>:<branch>` (the pipeline of Phase 5 will publish it,
+tagged with the commit SHA and the branch name).
+
+## Deployment workflow
+
+The request returns immediately (`202`) and a dedicated executor runs the workflow; follow it with
+`GET /api/deployments/{id}` (the dashboard polls it).
+
+```mermaid
+stateDiagram-v2
+    [*] --> PENDING: POST /deploy (project valid, image decided)
+    PENDING --> DEPLOYING: worker starts
+    DEPLOYING --> RUNNING: helm applied, rollout available
+    DEPLOYING --> FAILED: helm error, image cannot be pulled, crash loop, timeout
+    PENDING --> FAILED: queue full, backend restarted
+    RUNNING --> [*]
+    FAILED --> [*]
+```
+
+`BUILDING` (Phase 5) and `ROLLED_BACK` (Phase 8) exist in the schema but are not produced yet.
+
+1. **Validate** the project and **decide the image** (request override, otherwise derived from the repository).
+2. **Record** a `PENDING` deployment. One deployment per project may be in flight at a time (`409` otherwise,
+   enforced by a partial unique index).
+3. **Deploy**: create the namespace `dk-<project>-<id>`, then `helm upgrade --install` with the chart in `helm/deploykit-app`.
+4. **Monitor the rollout** through the Kubernetes API. A pod stuck in `ImagePullBackOff`, `CrashLoopBackOff`, ... for
+   30 s fails the deployment right away instead of waiting for the 5 minute timeout.
+5. **Store** every step in `deployment_logs` and set the final status, `started_at`, `finished_at` and `error_message`.
+
+A failed rollout leaves the previous version running (rolling update). On startup, deployments left in flight by a
+previous run are marked `FAILED`.
+
+Limits of this phase: the deployment engine assumes a **single backend instance**, and it needs the `helm` binary and
+a kubeconfig, so deploy from a backend run natively (see below), not from the `full` Docker Compose profile.
+Private registries (image pull secrets) are not supported yet.
 
 ## Architecture
 
@@ -142,6 +181,10 @@ The kind config maps ports 8081/8443 for an ingress controller, which is not ins
 |---|---|---|
 | `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` | default profile / containers | JDBC connection. No defaults. |
 | `POSTGRES_*` | `local` profile, Compose | From `.env`; `local` builds the JDBC URL from these |
+| `DEPLOYKIT_HELM_CHART_PATH` | deployments | Chart directory, default `../helm/deploykit-app` (relative to `backend/`) |
+| `HELM_BINARY` | deployments | Helm executable, default `helm` |
+| `DEPLOYKIT_REGISTRY` | deployments | Registry of derived images, default `ghcr.io` |
+| `DEPLOYKIT_DEPLOYMENT_ROLLOUT_TIMEOUT`, `..._POLL_INTERVAL`, `..._FAILURE_GRACE` | deployments | Defaults `5m`, `2s`, `30s` |
 | `SERVER_PORT` | all | Default `8080` |
 | `LOG_LEVEL` | all | Level for `com.deploykit` (default `INFO`) |
 
@@ -157,8 +200,10 @@ cd frontend && npm run lint && npm run build
 ```
 
 Backend tests cover the health controller, global exception handler, `ProjectService` (Mockito),
-`ProjectController` (MockMvc: validation, 201/204/400/404/409) and `KubernetesService` (Fabric8 mock API server:
-namespace, deployment shape, rollout status, pods, logs, error mapping).
+`ProjectController` (MockMvc: validation, 201/204/400/404/409), `KubernetesService` (Fabric8 mock API server:
+namespace, deployment shape, rollout status, pods, logs, error mapping) and the deployment engine:
+`DeploymentService`, `DeploymentRunner`, `RolloutMonitor` (success, failure, timeout, fail-fast, transient errors),
+`HelmService` and `ProcessCommandRunner` (real processes), image resolution, naming and the deploy endpoints.
 
 `KubernetesServiceClusterTest` runs against a real cluster (server-side apply, rollout, scaling, pods, logs) and is
 skipped unless enabled. With the kind cluster running:
@@ -175,6 +220,13 @@ Testcontainers integration tests, Vitest and Playwright come in Phase 10.
 - **Backend `Could not resolve placeholder 'DB_URL'`:** run with `SPRING_PROFILES_ACTIVE=local`, or export `DB_*`.
 - **`Could not resolve placeholder 'POSTGRES_PASSWORD'` with `local`:** run from the `backend/` directory so `../.env` resolves.
 - **Frontend shows "Backend unreachable":** the backend is not running on `:8080`.
+- **Deployment `FAILED` with `Helm chart not found`:** start the backend from `backend/`, or set `DEPLOYKIT_HELM_CHART_PATH`.
+- **Deployment `FAILED` with `Cannot execute 'helm'`:** install Helm and make sure it is on the backend's `PATH`.
+- **Deployment `FAILED` with `Pod ... is ErrImagePull`/`ImagePullBackOff`:** the image does not exist or is private.
+  Pass an existing `image` (for example `nginx:1.27-alpine`), or wait for the pipeline of Phase 5 to publish it.
+- **`409 A deployment is already in progress`:** wait for the current one to finish, it fails on its own after at most
+  the rollout timeout.
+- **`kubectl port-forward` shows nothing:** something else may hold the port (`lsof -nP -iTCP:<port> -sTCP:LISTEN`).
 - **Password changed but DB login fails:** the volume keeps the old password; `docker compose down -v` (deletes data).
 
 ## Roadmap
@@ -182,7 +234,7 @@ Testcontainers integration tests, Vitest and Playwright come in Phase 10.
 1. ~~Foundation~~
 2. ~~Project management API + UI~~
 3. ~~Kubernetes integration + Helm chart~~
-4. Deployment engine
+4. ~~Deployment engine~~
 5. GitHub Actions build pipeline
 6. Deployment history
 7. Logs

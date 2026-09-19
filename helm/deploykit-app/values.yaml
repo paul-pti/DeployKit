@@ -36,6 +36,8 @@ existingSecret: ""
 
 probes:
   enabled: true
+  # tcp works for any server; http requires the app to answer 200 on `path`.
+  type: tcp
   path: /
   initialDelaySeconds: 5
   periodSeconds: 10

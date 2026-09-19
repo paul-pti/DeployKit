@@ -18,7 +18,36 @@ flowchart TD
 - Errors are RFC 7807 `ProblemDetail` (`application/problem+json`), produced in one place.
 - Schema is owned by Flyway (`db/migration`); `ddl-auto: validate`.
 
-## Data model (V1)
+## Deployment engine
+
+```mermaid
+sequenceDiagram
+    participant UI as Dashboard
+    participant C as DeploymentController
+    participant S as DeploymentService
+    participant R as DeploymentRunner (worker thread)
+    participant H as Helm CLI
+    participant K as Kubernetes API
+    participant DB as PostgreSQL
+    UI->>C: POST /api/projects/{id}/deploy
+    C->>S: deploy()
+    S->>DB: deployment PENDING
+    S-->>UI: 202 + Location
+    S->>R: run(id) on executor
+    R->>DB: DEPLOYING
+    R->>H: helm upgrade --install
+    H->>K: apply chart
+    loop until AVAILABLE, failure or timeout
+        R->>K: deployment + pod status
+        R->>DB: progress log
+    end
+    R->>DB: RUNNING or FAILED
+    UI->>C: GET /api/deployments/{id} (polling)
+```
+
+Design decisions: [ADR 0004](adr/0004-async-deployment-engine.md).
+
+## Data model (V1, V2)
 
 ```mermaid
 erDiagram
@@ -28,6 +57,7 @@ erDiagram
 ```
 
 Deployment states: `PENDING, BUILDING, DEPLOYING, RUNNING, FAILED, ROLLED_BACK` (enforced by a check constraint).
+V2 adds a partial unique index allowing a single `PENDING`/`BUILDING`/`DEPLOYING` deployment per project.
 
 ## Frontend
 
