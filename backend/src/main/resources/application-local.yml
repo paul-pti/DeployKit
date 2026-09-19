@@ -1,0 +1,17 @@
+# Local development profile: SPRING_PROFILES_ACTIVE=local
+# Credentials come from the repo-root .env (see .env.example), never from this file.
+spring:
+  config:
+    import: optional:file:../.env[.properties]
+  datasource:
+    url: jdbc:postgresql://localhost:${POSTGRES_PORT:5432}/${POSTGRES_DB:deploykit}
+    username: ${POSTGRES_USER:deploykit}
+    password: ${POSTGRES_PASSWORD}
+
+logging:
+  structured:
+    format:
+      # Human-readable logs while developing.
+      console: ""
+  level:
+    com.deploykit: DEBUG
