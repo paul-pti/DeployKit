@@ -3,8 +3,9 @@
 A self-service internal developer platform: point it at a GitHub repository, and DeployKit builds, ships and
 runs the app on Kubernetes, with deployment history, logs and rollback.
 
-> **Status: Phase 2 (project management) complete.** Projects can be created, listed, viewed and deleted from the
-> API and the dashboard. Kubernetes, deployments, auth and AWS come in later phases (see [Roadmap](#roadmap)).
+> **Status: Phase 3 (Kubernetes integration) complete.** Projects can be managed from the API and dashboard, a local
+> kind cluster and a generic Helm chart exist, and the backend has a `KubernetesService` (create/update deployments,
+> status, pods, logs). The deployment engine, auth and AWS come in later phases (see [Roadmap](#roadmap)).
 
 ## API
 
@@ -41,6 +42,7 @@ More detail: [docs/architecture.md](docs/architecture.md).
 | Backend | Java 21, Spring Boot 3.5, Maven | Mature, well-known stack for platform tooling |
 | Database | PostgreSQL 16 + Flyway | Versioned migrations; Hibernate only *validates* the schema |
 | Frontend | React 19, TypeScript, Vite, Tailwind CSS 4, React Router, TanStack Query, Axios | Feature-oriented structure, server state in TanStack Query |
+| Kubernetes | Fabric8 client, Helm chart, kind (local) | Fluent client API; one generic chart for every app |
 | Local infra | Docker Compose | One command for Postgres |
 
 Decisions are recorded in [docs/adr](docs/adr).
@@ -108,9 +110,31 @@ npm run dev                             # http://localhost:5173
 The dev server proxies `/api` to `http://localhost:8080` (override with `VITE_API_PROXY_TARGET`,
 see `frontend/.env.example`). The header shows the live backend status.
 
-### Running Kubernetes locally
+### 5. Run Kubernetes locally (kind)
 
-Arrives in Phase 3 (kind or k3d).
+```bash
+brew install kind helm                  # or download the binaries; kubectl is also required
+kind create cluster --config infrastructure/kind/kind-config.yaml   # context: kind-deploykit
+kubectl get nodes
+```
+
+The backend uses your current kubeconfig context (or `deploykit.kubernetes.context` / `DEPLOYKIT_KUBERNETES_CONTEXT`
+to pick one, e.g. `kind-deploykit`). The client connects lazily, so the backend still starts without a cluster.
+Delete the cluster with `kind delete cluster --name deploykit`.
+
+**Helm chart** (`helm/deploykit-app`) renders a Deployment, Service, Ingress (off by default), ConfigMap and Secret:
+
+```bash
+helm lint helm/deploykit-app
+helm upgrade --install demo helm/deploykit-app -n demo --create-namespace \
+  --set image.repository=nginx --set image.tag=1.27-alpine --set containerPort=80 \
+  --set config.GREETING=hi --set-string secretEnv.API_KEY=change-me --wait
+helm -n demo uninstall demo
+```
+
+Sensitive values go in `secretEnv` (or an existing Secret via `existingSecret`); never commit real values. The
+chart labels pods with `app.kubernetes.io/name=<app name>`, the same label `KubernetesService` selects on.
+The kind config maps ports 8081/8443 for an ingress controller, which is not installed by default.
 
 ## Configuration reference (backend)
 
@@ -132,9 +156,18 @@ docker run --rm -v "$PWD/backend":/w -v deploykit-m2:/root/.m2 -w /w maven:3.9-e
 cd frontend && npm run lint && npm run build
 ```
 
-Backend tests cover the health controller, global exception handler, `ProjectService` (Mockito) and
-`ProjectController` (MockMvc: validation, 201/204/400/404/409). Testcontainers integration tests,
-Vitest and Playwright come in Phase 10.
+Backend tests cover the health controller, global exception handler, `ProjectService` (Mockito),
+`ProjectController` (MockMvc: validation, 201/204/400/404/409) and `KubernetesService` (Fabric8 mock API server:
+namespace, deployment shape, rollout status, pods, logs, error mapping).
+
+`KubernetesServiceClusterTest` runs against a real cluster (server-side apply, rollout, scaling, pods, logs) and is
+skipped unless enabled. With the kind cluster running:
+
+```bash
+cd backend && DEPLOYKIT_IT_K8S=true ./mvnw test -Dtest=KubernetesServiceClusterTest
+```
+
+Testcontainers integration tests, Vitest and Playwright come in Phase 10.
 
 ## Troubleshooting
 
@@ -148,7 +181,7 @@ Vitest and Playwright come in Phase 10.
 
 1. ~~Foundation~~
 2. ~~Project management API + UI~~
-3. Kubernetes integration + Helm chart
+3. ~~Kubernetes integration + Helm chart~~
 4. Deployment engine
 5. GitHub Actions build pipeline
 6. Deployment history

@@ -1,0 +1,53 @@
+# Overrides the resource name (defaults to the release name).
+fullnameOverride: ""
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/example/app
+  tag: latest
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+# Port the application listens on inside the container.
+containerPort: 8080
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+  className: ""
+  host: app.localtest.me
+  path: /
+  annotations: {}
+  tls: []
+
+# Plain environment variables. Rendered into a ConfigMap and injected with envFrom.
+config: {}
+
+# Sensitive environment variables. Rendered into a Secret and injected with envFrom.
+# Never commit real values: pass them with `--set-string secretEnv.KEY=...` or use existingSecret.
+secretEnv: {}
+# Name of a Secret that already exists in the namespace (used instead of secretEnv).
+existingSecret: ""
+
+probes:
+  enabled: true
+  path: /
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+# Many public images run as root, so no security context is forced by default.
+podSecurityContext: {}
+securityContext: {}
