@@ -9,6 +9,7 @@ import com.deploykit.exception.ResourceNotFoundException;
 import io.fabric8.kubernetes.api.model.ContainerStatus;
 import io.fabric8.kubernetes.api.model.EnvVar;
 import io.fabric8.kubernetes.api.model.EnvVarBuilder;
+import io.fabric8.kubernetes.api.model.Namespace;
 import io.fabric8.kubernetes.api.model.NamespaceBuilder;
 import io.fabric8.kubernetes.api.model.Pod;
 import io.fabric8.kubernetes.api.model.apps.Deployment;
@@ -68,6 +69,27 @@ public class KubernetesService {
                     // Created concurrently by someone else: that is fine.
                 }
             }
+            return null;
+        });
+    }
+
+    /**
+     * Deletes a namespace and everything in it. Refuses (with a warning) to touch a namespace that DeployKit
+     * did not create, so a wrong name can never remove someone else's workloads.
+     */
+    public void deleteNamespace(String namespace) {
+        call("delete namespace " + namespace, () -> {
+            Namespace existing = client.namespaces().withName(namespace).get();
+            if (existing == null) {
+                return null;
+            }
+            Map<String, String> labels = existing.getMetadata().getLabels();
+            if (labels == null || !MANAGED_BY.equals(labels.get(MANAGED_BY_LABEL))) {
+                log.warn("Refusing to delete namespace {}: it is not managed by DeployKit", namespace);
+                return null;
+            }
+            client.namespaces().withName(namespace).delete();
+            log.info("Deleted namespace {}", namespace);
             return null;
         });
     }

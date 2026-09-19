@@ -26,6 +26,7 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExcep
 public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+    private static final String BAD_REQUEST_TITLE = "Bad request";
 
     @Override
     protected ResponseEntity<Object> handleMethodArgumentNotValid(
@@ -51,7 +52,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
             WebRequest request) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(
                 HttpStatus.BAD_REQUEST, "Malformed or unreadable request body");
-        problem.setTitle("Bad request");
+        problem.setTitle(BAD_REQUEST_TITLE);
         return ResponseEntity.badRequest().body(problem);
     }
 
@@ -62,9 +63,23 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(problem);
     }
 
-    @ExceptionHandler(DuplicateResourceException.class)
-    public ResponseEntity<ProblemDetail> handleDuplicate(DuplicateResourceException ex) {
+    @ExceptionHandler(ConflictException.class)
+    public ResponseEntity<ProblemDetail> handleConflict(ConflictException ex) {
         return conflict(ex.getMessage());
+    }
+
+    @ExceptionHandler(InvalidRequestException.class)
+    public ResponseEntity<ProblemDetail> handleInvalidRequest(InvalidRequestException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
+        problem.setTitle(BAD_REQUEST_TITLE);
+        return ResponseEntity.badRequest().body(problem);
+    }
+
+    @ExceptionHandler(ServiceBusyException.class)
+    public ResponseEntity<ProblemDetail> handleServiceBusy(ServiceBusyException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage());
+        problem.setTitle("Service busy");
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(problem);
     }
 
     /** Safety net for races that slip past the service-level duplicate check. */
@@ -78,7 +93,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     public ResponseEntity<ProblemDetail> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(
                 HttpStatus.BAD_REQUEST, "Invalid value for parameter '" + ex.getName() + "'");
-        problem.setTitle("Bad request");
+        problem.setTitle(BAD_REQUEST_TITLE);
         return ResponseEntity.badRequest().body(problem);
     }
 
