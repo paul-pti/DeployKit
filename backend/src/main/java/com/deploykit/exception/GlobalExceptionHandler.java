@@ -82,6 +82,13 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return ResponseEntity.badRequest().body(problem);
     }
 
+    @ExceptionHandler(KubernetesOperationException.class)
+    public ResponseEntity<ProblemDetail> handleKubernetes(KubernetesOperationException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_GATEWAY, ex.getMessage());
+        problem.setTitle("Kubernetes error");
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(problem);
+    }
+
     private ResponseEntity<ProblemDetail> conflict(String detail) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, detail);
         problem.setTitle("Conflict");
