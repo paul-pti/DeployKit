@@ -5,6 +5,7 @@ import com.deploykit.dto.AppDeploymentSpec;
 import com.deploykit.dto.DeploymentStatusInfo;
 import com.deploykit.dto.PodInfo;
 import com.deploykit.exception.KubernetesOperationException;
+import com.deploykit.exception.PodLogsUnavailableException;
 import com.deploykit.exception.ResourceNotFoundException;
 import io.fabric8.kubernetes.api.model.ContainerStatus;
 import io.fabric8.kubernetes.api.model.EnvVar;
@@ -18,6 +19,7 @@ import io.fabric8.kubernetes.api.model.apps.DeploymentCondition;
 import io.fabric8.kubernetes.api.model.apps.DeploymentStatus;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.KubernetesClientException;
+import io.fabric8.kubernetes.client.dsl.PodResource;
 import java.net.HttpURLConnection;
 import java.time.Instant;
 import java.util.Comparator;
@@ -180,10 +182,34 @@ public class KubernetesService {
     }
 
     public String getPodLogs(String namespace, String podName, int tailLines) {
+        return getPodLogs(namespace, podName, tailLines, false);
+    }
+
+    /**
+     * Last lines of a pod's output. With {@code previous}, the output of the previous (terminated) container is
+     * read instead, which is what explains a crash loop.
+     *
+     * @throws PodLogsUnavailableException when Kubernetes refuses because the container has not started, or there
+     *                                     is no previous container
+     */
+    public String getPodLogs(String namespace, String podName, int tailLines, boolean previous) {
         int tail = Math.clamp(tailLines, 1, MAX_LOG_LINES);
-        String logs = call("get logs of pod " + namespace + "/" + podName, () ->
-                client.pods().inNamespace(namespace).withName(podName).tailingLines(tail).getLog());
+        String logs = call("get logs of pod " + namespace + "/" + podName, () -> {
+            try {
+                PodResource pod = client.pods().inNamespace(namespace).withName(podName);
+                return previous ? pod.terminated().tailingLines(tail).getLog() : pod.tailingLines(tail).getLog();
+            } catch (KubernetesClientException e) {
+                if (e.getCode() == HttpURLConnection.HTTP_BAD_REQUEST) {
+                    throw new PodLogsUnavailableException(reasonOf(e));
+                }
+                throw e;
+            }
+        });
         return logs == null ? "" : logs;
+    }
+
+    private static String reasonOf(KubernetesClientException e) {
+        return e.getStatus() != null && e.getStatus().getMessage() != null ? e.getStatus().getMessage() : e.getMessage();
     }
 
     private PodInfo toPodInfo(Pod pod) {
@@ -202,9 +228,13 @@ public class KubernetesService {
                 ? Instant.parse(pod.getStatus().getStartTime())
                 : null;
 
+        boolean hasContainer = pod.getSpec() != null && pod.getSpec().getContainers() != null
+                && !pod.getSpec().getContainers().isEmpty();
+        String image = hasContainer ? pod.getSpec().getContainers().get(0).getImage() : null;
+
         return new PodInfo(pod.getMetadata().getName(),
                 pod.getStatus() != null ? pod.getStatus().getPhase() : null,
-                ready, restarts, reason, startedAt);
+                ready, restarts, reason, image, startedAt);
     }
 
     private String containerReason(ContainerStatus container) {

@@ -2,8 +2,10 @@ package com.deploykit.controller;
 
 import com.deploykit.domain.DeploymentStatus;
 import com.deploykit.dto.DeployRequest;
+import com.deploykit.dto.DeploymentLogsResponse;
 import com.deploykit.dto.DeploymentPage;
 import com.deploykit.dto.DeploymentResponse;
+import com.deploykit.service.DeploymentLogService;
 import com.deploykit.service.DeploymentService;
 import jakarta.validation.Valid;
 import java.net.URI;
@@ -21,9 +23,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class DeploymentController {
 
     private final DeploymentService deploymentService;
+    private final DeploymentLogService deploymentLogService;
 
-    public DeploymentController(DeploymentService deploymentService) {
+    public DeploymentController(DeploymentService deploymentService, DeploymentLogService deploymentLogService) {
         this.deploymentService = deploymentService;
+        this.deploymentLogService = deploymentLogService;
     }
 
     /** Starts a deployment and returns immediately; poll the Location URL for progress. */
@@ -48,6 +52,18 @@ public class DeploymentController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
         return deploymentService.list(projectId, statuses, page, size);
+    }
+
+    /**
+     * Logs of a deployment: the last {@code tail} lines of each pod running its image (or of their previous
+     * container with {@code previous=true}) and the events of the deployment workflow.
+     */
+    @GetMapping("/api/deployments/{id}/logs")
+    public DeploymentLogsResponse logs(
+            @PathVariable UUID id,
+            @RequestParam(defaultValue = "200") int tail,
+            @RequestParam(defaultValue = "false") boolean previous) {
+        return deploymentLogService.getLogs(id, tail, previous);
     }
 
     @GetMapping("/api/deployments/{id}")

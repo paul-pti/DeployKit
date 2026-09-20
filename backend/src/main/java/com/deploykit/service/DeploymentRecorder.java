@@ -13,7 +13,9 @@ import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,6 +29,7 @@ public class DeploymentRecorder {
 
     static final int MAX_LOG_LENGTH = 8000;
     static final int MAX_ERROR_LENGTH = 2000;
+    static final int MAX_EVENTS = 1000;
 
     private final DeploymentRepository deploymentRepository;
     private final DeploymentLogRepository logRepository;
@@ -51,6 +54,13 @@ public class DeploymentRecorder {
     public Deployment get(UUID id) {
         return deploymentRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Deployment " + id + " not found"));
+    }
+
+    /** The workflow log of a deployment, oldest first (at most 1000 entries). */
+    @Transactional(readOnly = true)
+    public List<DeploymentLog> events(UUID deploymentId) {
+        return logRepository.findByDeploymentId(
+                deploymentId, PageRequest.of(0, MAX_EVENTS, Sort.by(Sort.Order.asc("loggedAt"))));
     }
 
     @Transactional(readOnly = true)

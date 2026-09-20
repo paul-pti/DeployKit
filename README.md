@@ -3,10 +3,10 @@
 A self-service internal developer platform: point it at a GitHub repository, and DeployKit builds, ships and
 runs the app on Kubernetes, with deployment history, logs and rollback.
 
-> **Status: Phase 6 (deployment history) complete.** A project can be deployed to Kubernetes through Helm from the
-> API and the dashboard, a reusable GitHub Actions workflow builds and publishes the images DeployKit deploys, and each
-> project keeps a filterable deployment history. Logs, rollback, auth and AWS come in later phases (see
-> [Roadmap](#roadmap)).
+> **Status: Phase 7 (logs) complete.** A project can be deployed to Kubernetes through Helm from the API and the
+> dashboard, a reusable GitHub Actions workflow builds and publishes the images DeployKit deploys, each project keeps a
+> filterable deployment history, and the logs of a deployment are readable in a terminal-style view that refreshes
+> itself. Rollback, auth and AWS come in later phases (see [Roadmap](#roadmap)).
 
 ## API
 
@@ -20,6 +20,7 @@ runs the app on Kubernetes, with deployment history, logs and rollback.
 | `POST` | `/api/projects/{id}/deploy` | 202 + `Location`, deployment `PENDING` | 400 invalid image, 404, 409 deployment already in progress, 503 queue full |
 | `GET` | `/api/projects/{id}/deployments` | 200, one page, newest first | 400 malformed id or unknown status, 404 |
 | `GET` | `/api/deployments/{id}` | 200 | 400 malformed id, 404 |
+| `GET` | `/api/deployments/{id}/logs` | 200, pod logs and workflow events | 400 malformed id or non-numeric `tail`, 404 |
 
 `POST /api/projects` body: `name` (required, ≤100, unique), `repositoryUrl` (required, `https://github.com/owner/repo`),
 `branch` (optional, defaults to `main`), `port` (required, 1-65535). Errors are RFC 7807 `application/problem+json`.
@@ -50,6 +51,33 @@ publishes, tagged with the commit SHA and the branch name.
 
 The project page shows the history as a table (version, commit, status, created, duration, image, failure reason) with a
 status filter and pagination, and refreshes itself every 3 seconds while a deployment is in flight.
+
+### Deployment logs
+
+`GET /api/deployments/{id}/logs?tail=200&previous=false` returns everything worth reading about a deployment:
+
+```json
+{ "deploymentId": "...", "status": "RUNNING",
+  "pods": [ { "pod": "app-7d9f-x2", "phase": "Running", "ready": true, "restarts": 0, "reason": null,
+              "log": "last lines of the container output...", "error": null } ],
+  "podsNote": null,
+  "events": [ { "timestamp": "2026-09-20T10:00:00Z", "level": "INFO", "message": "Deployment queued for image ..." } ] }
+```
+
+- **`pods`** are the Kubernetes pods of the application that run **this deployment's image**, with the last `tail` lines
+  of their output (default 200, at most 5000). A pod that cannot give its logs (image still being pulled, or unable to
+  be pulled) is reported with an `error` instead of failing the whole request.
+- **`previous=true`** reads the previous container of each pod, which is what explains a `CrashLoopBackOff`.
+- **`podsNote`** says why `pods` is empty: the deployment has not started, a newer deployment replaced its pods,
+  the project was never deployed, or Kubernetes is unreachable. Pods only exist while their image is running, so the
+  logs of an old deployment are gone once a newer one replaced it.
+- **`events`** are the steps of the deployment workflow stored in `deployment_logs` (Helm output, rollout progress,
+  failure reason, up to 1000 entries, oldest first). They stay available after the pods are gone and are the place to
+  look when a deployment `FAILED` before its containers ever started.
+
+On the project page, the **View** button of a history row opens its logs in a dark terminal with two tabs,
+*Application* and *Deployment*. It refreshes every 3 seconds (a checkbox turns it off), follows the end of the output
+like `tail -f`, and stops following while you scroll up to read. Until a row is chosen it shows the newest deployment.
 
 ## Deployment workflow
 
@@ -276,6 +304,8 @@ Testcontainers integration tests, Vitest and Playwright come in Phase 10.
 - **Deployment `FAILED` with `Pod ... is ErrImagePull`/`ImagePullBackOff`:** the image does not exist or is private.
   Pass an existing `image` (for example `nginx:1.27-alpine`), or make sure the pipeline has published it and that the
   GHCR package is public ([docs/github-actions.md](docs/github-actions.md)).
+- **Logs say `container ... is waiting to start`:** the image is still being pulled or cannot be pulled. The
+  *Deployment* tab has the reason; for a crash, tick *Previous container* to read the output of the last run.
 - **`409 A deployment is already in progress`:** wait for the current one to finish, it fails on its own after at most
   the rollout timeout.
 - **`kubectl port-forward` shows nothing:** something else may hold the port (`lsof -nP -iTCP:<port> -sTCP:LISTEN`).
@@ -289,7 +319,7 @@ Testcontainers integration tests, Vitest and Playwright come in Phase 10.
 4. ~~Deployment engine~~
 5. ~~GitHub Actions build pipeline~~
 6. ~~Deployment history~~
-7. Logs
+7. ~~Logs~~
 8. Rollback
 9. Authentication (JWT, USER/ADMIN)
 10. Testing (Testcontainers, Vitest, Playwright)
