@@ -6,7 +6,8 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-deploykit}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (see .env.example)}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      # Bound to localhost only: the database must not be reachable from the network.
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -24,7 +25,8 @@ services:
       DB_USERNAME: ${POSTGRES_USER:-deploykit}
       DB_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (see .env.example)}
     ports:
-      - "8080:8080"
+      # Localhost only: the API has no authentication yet (Phase 9).
+      - "127.0.0.1:8080:8080"
     depends_on:
       postgres:
         condition: service_healthy

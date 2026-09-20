@@ -139,6 +139,9 @@ cp .env.example .env      # then set POSTGRES_PASSWORD
 docker compose up -d postgres
 ```
 
+The Compose ports (Postgres `5432`, backend `8080`) are bound to `127.0.0.1`, so nothing is reachable from the
+network. The API has no authentication yet, do not expose it before Phase 9.
+
 ### 3. Run the backend
 
 Option A — JDK 21 installed:
