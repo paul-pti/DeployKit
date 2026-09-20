@@ -1,8 +1,20 @@
 import { apiClient } from '../lib/apiClient'
-import type { DeployRequest, Deployment, DeploymentPage, DeploymentStatus } from '../types/deployment'
+import type {
+  DeployRequest,
+  Deployment,
+  DeploymentPage,
+  DeploymentStatus,
+  RollbackRequest,
+} from '../types/deployment'
 
 export async function deployProject(projectId: string, request?: DeployRequest): Promise<Deployment> {
   const { data } = await apiClient.post<Deployment>(`/api/projects/${projectId}/deploy`, request)
+  return data
+}
+
+/** Rolls the latest deployment back; the result is the new rollback deployment (a history entry of its own). */
+export async function rollbackDeployment(id: string, request?: RollbackRequest): Promise<Deployment> {
+  const { data } = await apiClient.post<Deployment>(`/api/deployments/${id}/rollback`, request)
   return data
 }
 

@@ -20,6 +20,8 @@ export interface Deployment {
   projectId: string
   /** Per-project deployment number: 1, 2, 3, ... */
   version: number
+  /** For a rollback: the version whose image it restores; null for a regular deployment. */
+  rollbackOfVersion: number | null
   status: DeploymentStatus
   image: string
   commitSha: string | null
@@ -27,6 +29,11 @@ export interface Deployment {
   finishedAt: string | null
   createdAt: string
   errorMessage: string | null
+}
+
+/** Body of a rollback request; without a target the previous successful version is restored. */
+export interface RollbackRequest {
+  targetVersion?: number
 }
 
 /** One page of a project's deployment history, newest first. `page` is zero-based. */
