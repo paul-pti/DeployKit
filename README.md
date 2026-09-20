@@ -3,9 +3,10 @@
 A self-service internal developer platform: point it at a GitHub repository, and DeployKit builds, ships and
 runs the app on Kubernetes, with deployment history, logs and rollback.
 
-> **Status: Phase 5 (image build pipeline) complete.** A project can be deployed to Kubernetes through Helm from the
-> API and the dashboard, and a reusable GitHub Actions workflow builds and publishes the images DeployKit deploys.
-> History, logs, rollback, auth and AWS come in later phases (see [Roadmap](#roadmap)).
+> **Status: Phase 6 (deployment history) complete.** A project can be deployed to Kubernetes through Helm from the
+> API and the dashboard, a reusable GitHub Actions workflow builds and publishes the images DeployKit deploys, and each
+> project keeps a filterable deployment history. Logs, rollback, auth and AWS come in later phases (see
+> [Roadmap](#roadmap)).
 
 ## API
 
@@ -17,6 +18,7 @@ runs the app on Kubernetes, with deployment history, logs and rollback.
 | `GET` | `/api/projects/{id}` | 200 | 400 malformed id, 404 |
 | `DELETE` | `/api/projects/{id}` | 204, also deletes the project's Kubernetes namespace | 400 malformed id, 404, 409 deployment in progress |
 | `POST` | `/api/projects/{id}/deploy` | 202 + `Location`, deployment `PENDING` | 400 invalid image, 404, 409 deployment already in progress, 503 queue full |
+| `GET` | `/api/projects/{id}/deployments` | 200, one page, newest first | 400 malformed id or unknown status, 404 |
 | `GET` | `/api/deployments/{id}` | 200 | 400 malformed id, 404 |
 
 `POST /api/projects` body: `name` (required, ≤100, unique), `repositoryUrl` (required, `https://github.com/owner/repo`),
@@ -25,6 +27,29 @@ runs the app on Kubernetes, with deployment history, logs and rollback.
 `POST /api/projects/{id}/deploy` takes an optional body: `image` (full reference, e.g. `nginx:1.27-alpine`) or
 `commitSha`. Without a body the image is `ghcr.io/<owner>/<repo>:<branch>`, which the [build pipeline](#cicd-architecture)
 publishes, tagged with the commit SHA and the branch name.
+
+### Deployment history
+
+`GET /api/projects/{id}/deployments` returns a page, newest first:
+
+```json
+{ "content": [ { "id": "...", "version": 3, "status": "FAILED", "commitSha": null, "image": "ghcr.io/acme/app:main",
+                 "createdAt": "...", "startedAt": "...", "finishedAt": "...", "errorMessage": "Pod ... is ErrImagePull" } ],
+  "page": 0, "size": 20, "totalElements": 3, "totalPages": 1 }
+```
+
+- **Filter:** `?status=FAILED`, repeatable (`?status=FAILED&status=RUNNING`). An unknown status is a `400`.
+- **Paging:** `page` (zero-based, default 0) and `size` (default 20, at most 100; larger values are capped). The sort is
+  fixed, clients cannot choose it.
+- **`version`** is the per-project deployment number (1, 2, 3, ...), stored in the database (migration V3), so it never
+  changes. Rollbacks (Phase 8) will get their own number.
+- **`commitSha`** is recorded when the deploy request names it, or when the image tag is itself a commit SHA (which
+  is what the build pipeline produces). Deploying a branch-tagged image leaves it empty: DeployKit cannot know which
+  commit a moving tag points to without asking GitHub.
+- The **duration** is `finishedAt - startedAt`, computed by the dashboard.
+
+The project page shows the history as a table (version, commit, status, created, duration, image, failure reason) with a
+status filter and pagination, and refreshes itself every 3 seconds while a deployment is in flight.
 
 ## Deployment workflow
 
@@ -263,7 +288,7 @@ Testcontainers integration tests, Vitest and Playwright come in Phase 10.
 3. ~~Kubernetes integration + Helm chart~~
 4. ~~Deployment engine~~
 5. ~~GitHub Actions build pipeline~~
-6. Deployment history
+6. ~~Deployment history~~
 7. Logs
 8. Rollback
 9. Authentication (JWT, USER/ADMIN)
