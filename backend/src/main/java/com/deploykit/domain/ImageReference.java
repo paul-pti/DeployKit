@@ -37,9 +37,14 @@ public record ImageReference(String repository, String tag) {
         return new ImageReference(ref.substring(0, colon), ref.substring(colon + 1));
     }
 
+    /** True when the tag is a commit SHA (7 to 64 lowercase hex characters). */
+    public boolean isCommitSha() {
+        return COMMIT_SHA_TAG.matcher(tag).matches();
+    }
+
     /** Commit-SHA tags are immutable, anything else (branch names, latest) may move and must be re-pulled. */
     public String pullPolicy() {
-        return COMMIT_SHA_TAG.matcher(tag).matches() ? "IfNotPresent" : "Always";
+        return isCommitSha() ? "IfNotPresent" : "Always";
     }
 
     @Override

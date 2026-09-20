@@ -13,6 +13,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.deploykit.domain.DeploymentStatus;
 import com.deploykit.dto.DeployRequest;
+import com.deploykit.dto.DeploymentPage;
 import com.deploykit.dto.DeploymentResponse;
 import com.deploykit.exception.ConflictException;
 import com.deploykit.exception.GlobalExceptionHandler;
@@ -21,6 +22,8 @@ import com.deploykit.exception.ResourceNotFoundException;
 import com.deploykit.exception.ServiceBusyException;
 import com.deploykit.service.DeploymentService;
 import java.time.Instant;
+import java.util.Collection;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -45,7 +48,7 @@ class DeploymentControllerTest {
     private DeploymentService deploymentService;
 
     private DeploymentResponse pending() {
-        return new DeploymentResponse(deploymentId, projectId, DeploymentStatus.PENDING,
+        return new DeploymentResponse(deploymentId, projectId, 3, DeploymentStatus.PENDING,
                 "ghcr.io/acme/app:main", null, null, null, Instant.now(), null);
     }
 
@@ -132,6 +135,56 @@ class DeploymentControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("PENDING"))
                 .andExpect(jsonPath("$.image").value("ghcr.io/acme/app:main"));
+    }
+
+    @Test
+    void historyReturnsAPageWithDefaults() throws Exception {
+        when(deploymentService.list(eq(projectId), any(), eq(0), eq(20))).thenReturn(
+                new DeploymentPage(List.of(pending()), 0, 20, 1, 1));
+
+        mockMvc.perform(get("/api/projects/" + projectId + "/deployments"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].version").value(3))
+                .andExpect(jsonPath("$.content[0].status").value("PENDING"))
+                .andExpect(jsonPath("$.page").value(0))
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.totalPages").value(1));
+    }
+
+    @Test
+    void historyPassesRepeatedStatusFiltersAndPaging() throws Exception {
+        when(deploymentService.list(eq(projectId), any(), eq(2), eq(5))).thenReturn(
+                new DeploymentPage(List.of(), 2, 5, 0, 0));
+
+        mockMvc.perform(get("/api/projects/" + projectId + "/deployments")
+                        .param("status", "FAILED", "RUNNING")
+                        .param("page", "2")
+                        .param("size", "5"))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<Collection<DeploymentStatus>> statuses = ArgumentCaptor.captor();
+        verify(deploymentService).list(eq(projectId), statuses.capture(), eq(2), eq(5));
+        assertThat(statuses.getValue()).containsExactlyInAnyOrder(DeploymentStatus.FAILED, DeploymentStatus.RUNNING);
+    }
+
+    @Test
+    void historyRejectsAnUnknownStatus() throws Exception {
+        mockMvc.perform(get("/api/projects/" + projectId + "/deployments").param("status", "BROKEN"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void historyRejectsANonNumericPage() throws Exception {
+        mockMvc.perform(get("/api/projects/" + projectId + "/deployments").param("page", "abc"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void historyReturns404ForAnUnknownProject() throws Exception {
+        when(deploymentService.list(eq(projectId), any(), eq(0), eq(20)))
+                .thenThrow(new ResourceNotFoundException("Project not found"));
+
+        mockMvc.perform(get("/api/projects/" + projectId + "/deployments")).andExpect(status().isNotFound());
     }
 
     @Test

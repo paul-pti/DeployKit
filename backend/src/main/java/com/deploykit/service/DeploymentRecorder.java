@@ -9,8 +9,11 @@ import com.deploykit.exception.ResourceNotFoundException;
 import com.deploykit.repository.DeploymentLogRepository;
 import com.deploykit.repository.DeploymentRepository;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -38,7 +41,8 @@ public class DeploymentRecorder {
             throw new ConflictException("A deployment is already in progress for this project");
         }
         // Flush now so the unique index (one active deployment per project) rejects a concurrent request here.
-        Deployment deployment = deploymentRepository.saveAndFlush(new Deployment(projectId, image, commitSha));
+        int version = deploymentRepository.currentVersion(projectId) + 1;
+        Deployment deployment = deploymentRepository.saveAndFlush(new Deployment(projectId, version, image, commitSha));
         addLog(deployment.getId(), LogLevel.INFO, "Deployment queued for image " + image);
         return deployment;
     }
@@ -47,6 +51,13 @@ public class DeploymentRecorder {
     public Deployment get(UUID id) {
         return deploymentRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Deployment " + id + " not found"));
+    }
+
+    @Transactional(readOnly = true)
+    public Page<Deployment> list(UUID projectId, Collection<DeploymentStatus> statuses, Pageable pageable) {
+        return statuses == null || statuses.isEmpty()
+                ? deploymentRepository.findByProjectId(projectId, pageable)
+                : deploymentRepository.findByProjectIdAndStatusIn(projectId, statuses, pageable);
     }
 
     public void markDeploying(UUID id) {

@@ -15,6 +15,7 @@ import com.deploykit.domain.DeploymentStatus;
 import com.deploykit.domain.ImageReference;
 import com.deploykit.domain.Project;
 import com.deploykit.dto.DeployRequest;
+import com.deploykit.dto.DeploymentPage;
 import com.deploykit.dto.DeploymentResponse;
 import com.deploykit.exception.ConflictException;
 import com.deploykit.exception.InvalidRequestException;
@@ -25,11 +26,16 @@ import com.deploykit.repository.ProjectRepository;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.test.util.ReflectionTestUtils;
 
 class DeploymentServiceTest {
@@ -62,7 +68,8 @@ class DeploymentServiceTest {
         when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
         when(imageResolver.resolve(any(), any())).thenReturn(image);
         when(recorder.createPending(any(), anyString(), any())).thenAnswer(invocation -> {
-            Deployment deployment = new Deployment(invocation.getArgument(0), invocation.getArgument(1), invocation.getArgument(2));
+            Deployment deployment = new Deployment(
+                    invocation.getArgument(0), 7, invocation.getArgument(1), invocation.getArgument(2));
             ReflectionTestUtils.setField(deployment, "id", deploymentId);
             return deployment;
         });
@@ -133,8 +140,64 @@ class DeploymentServiceTest {
     }
 
     @Test
+    void theCommitIsRecordedWhenTheImageIsTaggedWithACommitSha() {
+        when(imageResolver.resolve(any(), any())).thenReturn(new ImageReference("ghcr.io/acme/app", "abc1234def"));
+
+        service.deploy(projectId, null);
+
+        verify(recorder).createPending(projectId, "ghcr.io/acme/app:abc1234def", "abc1234def");
+    }
+
+    @Test
+    void noCommitIsRecordedForABranchTaggedImage() {
+        service.deploy(projectId, null);
+
+        verify(recorder).createPending(projectId, "ghcr.io/acme/app:main", null);
+    }
+
+    @Test
+    void listReturnsAPageNewestFirstWithTheRequestedFilter() {
+        Deployment first = new Deployment(projectId, 2, "ghcr.io/acme/app:main", null);
+        ReflectionTestUtils.setField(first, "id", deploymentId);
+        Pageable expected = PageRequest.of(1, 5, Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("version")));
+        Set<DeploymentStatus> statuses = Set.of(DeploymentStatus.FAILED);
+        when(projectRepository.existsById(projectId)).thenReturn(true);
+        when(recorder.list(projectId, statuses, expected)).thenReturn(new PageImpl<>(List.of(first), expected, 6));
+
+        DeploymentPage page = service.list(projectId, statuses, 1, 5);
+
+        assertThat(page.content()).extracting(DeploymentResponse::version).containsExactly(2);
+        assertThat(page.page()).isEqualTo(1);
+        assertThat(page.size()).isEqualTo(5);
+        assertThat(page.totalElements()).isEqualTo(6);
+        assertThat(page.totalPages()).isEqualTo(2);
+    }
+
+    @Test
+    void listClampsThePageAndSizeInsteadOfTrustingTheClient() {
+        when(projectRepository.existsById(projectId)).thenReturn(true);
+        when(recorder.list(any(), any(), any())).thenAnswer(invocation ->
+                new PageImpl<Deployment>(List.of(), invocation.getArgument(2), 0));
+
+        DeploymentPage tooBig = service.list(projectId, null, -3, 100_000);
+        DeploymentPage tooSmall = service.list(projectId, null, 0, 0);
+
+        assertThat(tooBig.page()).isZero();
+        assertThat(tooBig.size()).isEqualTo(DeploymentService.MAX_PAGE_SIZE);
+        assertThat(tooSmall.size()).isEqualTo(1);
+    }
+
+    @Test
+    void listOfAnUnknownProjectIsNotFound() {
+        when(projectRepository.existsById(projectId)).thenReturn(false);
+
+        assertThatThrownBy(() -> service.list(projectId, null, 0, 20)).isInstanceOf(ResourceNotFoundException.class);
+        verifyNoInteractions(recorder);
+    }
+
+    @Test
     void getReturnsTheStoredDeployment() {
-        Deployment deployment = new Deployment(projectId, "ghcr.io/acme/app:main", null);
+        Deployment deployment = new Deployment(projectId, 1, "ghcr.io/acme/app:main", null);
         ReflectionTestUtils.setField(deployment, "id", deploymentId);
         when(recorder.get(deploymentId)).thenReturn(deployment);
 

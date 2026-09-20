@@ -6,9 +6,20 @@ export type DeploymentStatus =
   | 'FAILED'
   | 'ROLLED_BACK'
 
+export const DEPLOYMENT_STATUSES: DeploymentStatus[] = [
+  'PENDING',
+  'BUILDING',
+  'DEPLOYING',
+  'RUNNING',
+  'FAILED',
+  'ROLLED_BACK',
+]
+
 export interface Deployment {
   id: string
   projectId: string
+  /** Per-project deployment number: 1, 2, 3, ... */
+  version: number
   status: DeploymentStatus
   image: string
   commitSha: string | null
@@ -16,6 +27,15 @@ export interface Deployment {
   finishedAt: string | null
   createdAt: string
   errorMessage: string | null
+}
+
+/** One page of a project's deployment history, newest first. `page` is zero-based. */
+export interface DeploymentPage {
+  content: Deployment[]
+  page: number
+  size: number
+  totalElements: number
+  totalPages: number
 }
 
 export interface DeployRequest {
