@@ -47,7 +47,7 @@ sequenceDiagram
 
 Design decisions: [ADR 0004](adr/0004-async-deployment-engine.md).
 
-## Data model (V1 to V3)
+## Data model (V1 to V4)
 
 ```mermaid
 erDiagram
@@ -60,6 +60,7 @@ Deployment states: `PENDING, BUILDING, DEPLOYING, RUNNING, FAILED, ROLLED_BACK` 
 V2 adds a partial unique index allowing a single `PENDING`/`BUILDING`/`DEPLOYING` deployment per project.
 V3 adds `deployments.version`, a per-project sequence (1, 2, 3, ...) back-filled from `created_at` for existing rows and
 unique per project; the history shows it as the deployment's version.
+V4 adds `deployments.rollback_of_version`, the version a rollback deployment restores (NULL for regular deployments).
 
 ## Frontend
 
