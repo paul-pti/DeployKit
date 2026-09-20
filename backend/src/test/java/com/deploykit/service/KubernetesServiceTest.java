@@ -147,6 +147,7 @@ class KubernetesServiceTest {
         return new PodBuilder()
                 .withNewMetadata().withName(name).withNamespace("demo-ns")
                     .addToLabels("app.kubernetes.io/name", appName).endMetadata()
+                .withNewSpec().addNewContainer().withName("app").withImage("nginx:1.27-alpine").endContainer().endSpec()
                 .build();
     }
 
@@ -178,6 +179,7 @@ class KubernetesServiceTest {
         assertThat(pods.get(1).ready()).isTrue();
         assertThat(pods.get(1).reason()).isNull();
         assertThat(pods.get(1).startedAt()).isNotNull();
+        assertThat(pods).extracting(PodInfo::image).containsOnly("nginx:1.27-alpine");
     }
 
     @Test

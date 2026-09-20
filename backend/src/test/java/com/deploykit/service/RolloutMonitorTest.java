@@ -41,7 +41,7 @@ class RolloutMonitorTest {
     }
 
     private static PodInfo pod(String reason) {
-        return new PodInfo("demo-pod", "Pending", false, 0, reason, null);
+        return new PodInfo("demo-pod", "Pending", false, 0, reason, "nginx:1.27-alpine", null);
     }
 
     @Test

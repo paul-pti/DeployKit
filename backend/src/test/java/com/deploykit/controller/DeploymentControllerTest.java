@@ -13,13 +13,18 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.deploykit.domain.DeploymentStatus;
 import com.deploykit.dto.DeployRequest;
+import com.deploykit.dto.DeploymentEvent;
+import com.deploykit.dto.DeploymentLogsResponse;
 import com.deploykit.dto.DeploymentPage;
+import com.deploykit.dto.PodLogs;
 import com.deploykit.dto.DeploymentResponse;
 import com.deploykit.exception.ConflictException;
 import com.deploykit.exception.GlobalExceptionHandler;
 import com.deploykit.exception.InvalidRequestException;
 import com.deploykit.exception.ResourceNotFoundException;
 import com.deploykit.exception.ServiceBusyException;
+import com.deploykit.domain.LogLevel;
+import com.deploykit.service.DeploymentLogService;
 import com.deploykit.service.DeploymentService;
 import java.time.Instant;
 import java.util.Collection;
@@ -46,6 +51,9 @@ class DeploymentControllerTest {
 
     @MockitoBean
     private DeploymentService deploymentService;
+
+    @MockitoBean
+    private DeploymentLogService deploymentLogService;
 
     private DeploymentResponse pending() {
         return new DeploymentResponse(deploymentId, projectId, 3, DeploymentStatus.PENDING,
@@ -185,6 +193,52 @@ class DeploymentControllerTest {
                 .thenThrow(new ResourceNotFoundException("Project not found"));
 
         mockMvc.perform(get("/api/projects/" + projectId + "/deployments")).andExpect(status().isNotFound());
+    }
+
+    private DeploymentLogsResponse logs() {
+        return new DeploymentLogsResponse(deploymentId, DeploymentStatus.RUNNING,
+                List.of(new PodLogs("web-1", "Running", true, 0, null, "hello\n", null)),
+                null,
+                List.of(new DeploymentEvent(Instant.parse("2026-09-20T10:00:00Z"), LogLevel.INFO, "queued")));
+    }
+
+    @Test
+    void logsReturnPodLogsAndWorkflowEventsWithDefaults() throws Exception {
+        when(deploymentLogService.getLogs(deploymentId, 200, false)).thenReturn(logs());
+
+        mockMvc.perform(get("/api/deployments/" + deploymentId + "/logs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.deploymentId").value(deploymentId.toString()))
+                .andExpect(jsonPath("$.status").value("RUNNING"))
+                .andExpect(jsonPath("$.pods[0].pod").value("web-1"))
+                .andExpect(jsonPath("$.pods[0].log").value("hello\n"))
+                .andExpect(jsonPath("$.podsNote").doesNotExist())
+                .andExpect(jsonPath("$.events[0].level").value("INFO"))
+                .andExpect(jsonPath("$.events[0].message").value("queued"));
+    }
+
+    @Test
+    void logsPassTailAndPreviousToTheService() throws Exception {
+        when(deploymentLogService.getLogs(deploymentId, 50, true)).thenReturn(logs());
+
+        mockMvc.perform(get("/api/deployments/" + deploymentId + "/logs").param("tail", "50").param("previous", "true"))
+                .andExpect(status().isOk());
+
+        verify(deploymentLogService).getLogs(deploymentId, 50, true);
+    }
+
+    @Test
+    void logsReturn404ForAnUnknownDeployment() throws Exception {
+        when(deploymentLogService.getLogs(eq(deploymentId), eq(200), eq(false)))
+                .thenThrow(new ResourceNotFoundException("Deployment not found"));
+
+        mockMvc.perform(get("/api/deployments/" + deploymentId + "/logs")).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void logsRejectANonNumericTail() throws Exception {
+        mockMvc.perform(get("/api/deployments/" + deploymentId + "/logs").param("tail", "many"))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
