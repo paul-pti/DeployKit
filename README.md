@@ -3,9 +3,9 @@
 A self-service internal developer platform: point it at a GitHub repository, and DeployKit builds, ships and
 runs the app on Kubernetes, with deployment history, logs and rollback.
 
-> **Status: Phase 4 (deployment engine) complete.** A project can be deployed to Kubernetes through Helm from the API
-> and the dashboard, with the rollout monitored and every step logged. The image build pipeline (GitHub Actions),
-> history, logs, rollback, auth and AWS come in later phases (see [Roadmap](#roadmap)).
+> **Status: Phase 5 (image build pipeline) complete.** A project can be deployed to Kubernetes through Helm from the
+> API and the dashboard, and a reusable GitHub Actions workflow builds and publishes the images DeployKit deploys.
+> History, logs, rollback, auth and AWS come in later phases (see [Roadmap](#roadmap)).
 
 ## API
 
@@ -23,8 +23,8 @@ runs the app on Kubernetes, with deployment history, logs and rollback.
 `branch` (optional, defaults to `main`), `port` (required, 1-65535). Errors are RFC 7807 `application/problem+json`.
 
 `POST /api/projects/{id}/deploy` takes an optional body: `image` (full reference, e.g. `nginx:1.27-alpine`) or
-`commitSha`. Without a body the image is `ghcr.io/<owner>/<repo>:<branch>` (the pipeline of Phase 5 will publish it,
-tagged with the commit SHA and the branch name).
+`commitSha`. Without a body the image is `ghcr.io/<owner>/<repo>:<branch>`, which the [build pipeline](#cicd-architecture)
+publishes, tagged with the commit SHA and the branch name.
 
 ## Deployment workflow
 
@@ -42,7 +42,8 @@ stateDiagram-v2
     FAILED --> [*]
 ```
 
-`BUILDING` (Phase 5) and `ROLLED_BACK` (Phase 8) exist in the schema but are not produced yet.
+`BUILDING` and `ROLLED_BACK` (Phase 8) exist in the schema but are not produced yet: images are built by GitHub
+Actions in the application's own repository, not by DeployKit.
 
 1. **Validate** the project and **decide the image** (request override, otherwise derived from the repository).
 2. **Record** a `PENDING` deployment. One deployment per project may be in flight at a time (`409` otherwise,
@@ -86,6 +87,28 @@ More detail: [docs/architecture.md](docs/architecture.md).
 
 Decisions are recorded in [docs/adr](docs/adr).
 
+## CI/CD architecture
+
+Applications build their own images; DeployKit deploys them.
+
+```mermaid
+flowchart LR
+    dev[developer pushes] --> gha[GitHub Actions<br/>build.yml]
+    gha -->|tests, build, docker build amd64+arm64| ghcr[(GHCR<br/>:sha  :branch)]
+    ghcr --> dk[DeployKit deploy]
+    dk --> helm[Helm] --> k8s[Kubernetes]
+```
+
+- [`.github/workflows/build.yml`](.github/workflows/build.yml): reusable pipeline (checkout, tests, build, Docker
+  build, push to GHCR). Tags: full commit SHA and branch name, plus `latest` on the default branch only.
+- [`.github/workflows/ci.yml`](.github/workflows/ci.yml): DeployKit's own CI (backend through the same pipeline,
+  frontend lint and build, Helm lint).
+- **Secrets:** none to create for GHCR, the automatic `GITHUB_TOKEN` is enough when the job has
+  `packages: write`; `registry_token` is an optional personal access token for restricted setups.
+
+How to use the pipeline in your repository, tags, secrets, the first-run checklist and troubleshooting:
+[docs/github-actions.md](docs/github-actions.md).
+
 ## Repository layout
 
 ```
@@ -93,7 +116,7 @@ backend/         Spring Boot API (Maven)
 frontend/        React + Vite dashboard
 infrastructure/  Terraform (Phase 12)
 helm/            Helm charts (Phase 3)
-.github/         Workflows (Phase 5)
+.github/         GitHub Actions: CI and the reusable image pipeline
 docs/            Architecture notes and ADRs
 docker-compose.yml
 ```
@@ -223,7 +246,8 @@ Testcontainers integration tests, Vitest and Playwright come in Phase 10.
 - **Deployment `FAILED` with `Helm chart not found`:** start the backend from `backend/`, or set `DEPLOYKIT_HELM_CHART_PATH`.
 - **Deployment `FAILED` with `Cannot execute 'helm'`:** install Helm and make sure it is on the backend's `PATH`.
 - **Deployment `FAILED` with `Pod ... is ErrImagePull`/`ImagePullBackOff`:** the image does not exist or is private.
-  Pass an existing `image` (for example `nginx:1.27-alpine`), or wait for the pipeline of Phase 5 to publish it.
+  Pass an existing `image` (for example `nginx:1.27-alpine`), or make sure the pipeline has published it and that the
+  GHCR package is public ([docs/github-actions.md](docs/github-actions.md)).
 - **`409 A deployment is already in progress`:** wait for the current one to finish, it fails on its own after at most
   the rollout timeout.
 - **`kubectl port-forward` shows nothing:** something else may hold the port (`lsof -nP -iTCP:<port> -sTCP:LISTEN`).
@@ -235,7 +259,7 @@ Testcontainers integration tests, Vitest and Playwright come in Phase 10.
 2. ~~Project management API + UI~~
 3. ~~Kubernetes integration + Helm chart~~
 4. ~~Deployment engine~~
-5. GitHub Actions build pipeline
+5. ~~GitHub Actions build pipeline~~
 6. Deployment history
 7. Logs
 8. Rollback
@@ -244,4 +268,4 @@ Testcontainers integration tests, Vitest and Playwright come in Phase 10.
 11. Observability (Prometheus, Grafana, OpenTelemetry)
 12. AWS (Terraform: VPC, EKS, ECR, RDS, IAM)
 
-CI/CD architecture, deployment workflow, AWS/Terraform and observability sections will be added with their phases.
+The AWS/Terraform and observability sections will be added with their phases.
