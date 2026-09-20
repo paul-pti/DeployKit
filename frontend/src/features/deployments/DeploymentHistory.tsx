@@ -3,6 +3,7 @@ import { useDeploymentHistory } from '../../hooks/useDeployments'
 import { parseApiError } from '../../lib/apiError'
 import { formatDuration, shortSha } from '../../lib/format'
 import { DEPLOYMENT_STATUSES, isActive, type Deployment, type DeploymentStatus } from '../../types/deployment'
+import { DeploymentLogs } from '../logs/DeploymentLogs'
 import { StatusBadge } from './StatusBadge'
 
 function durationOf(deployment: Deployment): string {
@@ -13,7 +14,11 @@ function durationOf(deployment: Deployment): string {
 export function DeploymentHistory({ projectId }: { projectId: string }) {
   const [status, setStatus] = useState<DeploymentStatus | ''>('')
   const [page, setPage] = useState(0)
+  // Until a row is chosen, the logs follow the newest deployment.
+  const [pinnedId, setPinnedId] = useState<string>()
   const { data, isPending, isError, error } = useDeploymentHistory(projectId, status ? [status] : [], page)
+  const selectedId = pinnedId ?? data?.content[0]?.id
+  const selected = data?.content.find((deployment) => deployment.id === selectedId)
 
   const onFilterChange = (value: string) => {
     setStatus(value as DeploymentStatus | '')
@@ -67,11 +72,12 @@ export function DeploymentHistory({ projectId }: { projectId: string }) {
                   <th className="px-3 py-2">Duration</th>
                   <th className="px-3 py-2">Image</th>
                   <th className="px-3 py-2">Failure reason</th>
+                  <th className="px-3 py-2">Logs</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {data.content.map((deployment) => (
-                  <tr key={deployment.id}>
+                  <tr key={deployment.id} className={deployment.id === selectedId ? 'bg-slate-50' : undefined}>
                     <td className="px-3 py-2 font-medium">#{deployment.version}</td>
                     <td className="px-3 py-2 font-mono" title={deployment.commitSha ?? undefined}>
                       {shortSha(deployment.commitSha)}
@@ -91,6 +97,17 @@ export function DeploymentHistory({ projectId }: { projectId: string }) {
                       title={deployment.errorMessage ?? undefined}
                     >
                       {deployment.errorMessage ?? '—'}
+                    </td>
+                    <td className="px-3 py-2">
+                      <button
+                        type="button"
+                        onClick={() => setPinnedId(deployment.id)}
+                        aria-pressed={deployment.id === selectedId}
+                        aria-label={`View logs of deployment #${deployment.version}`}
+                        className="rounded-md border border-slate-300 px-2 py-0.5 text-xs aria-pressed:bg-slate-900 aria-pressed:text-white"
+                      >
+                        View
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -122,6 +139,8 @@ export function DeploymentHistory({ projectId }: { projectId: string }) {
               </button>
             </div>
           </div>
+
+          {selectedId && <DeploymentLogs key={selectedId} deploymentId={selectedId} version={selected?.version} />}
         </>
       )}
     </section>
