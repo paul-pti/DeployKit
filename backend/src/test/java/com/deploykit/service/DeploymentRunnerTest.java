@@ -62,7 +62,7 @@ class DeploymentRunnerTest {
 
         project = new Project("demo", "https://github.com/acme/app", "main", 8080);
         ReflectionTestUtils.setField(project, "id", projectId);
-        Deployment deployment = new Deployment(projectId, "nginx:1.27-alpine", null);
+        Deployment deployment = new Deployment(projectId, 1, "nginx:1.27-alpine", null);
         ReflectionTestUtils.setField(deployment, "id", deploymentId);
 
         when(recorder.get(deploymentId)).thenReturn(deployment);

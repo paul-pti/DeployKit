@@ -13,7 +13,7 @@ class DeploymentTest {
     private static final Instant T2 = Instant.parse("2026-09-20T10:01:00Z");
 
     private Deployment pending() {
-        return new Deployment(UUID.randomUUID(), "ghcr.io/acme/app:main", "abc1234");
+        return new Deployment(UUID.randomUUID(), 1, "ghcr.io/acme/app:main", "abc1234");
     }
 
     @Test

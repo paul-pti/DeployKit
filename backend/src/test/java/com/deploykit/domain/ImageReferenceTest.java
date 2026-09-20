@@ -39,6 +39,15 @@ class ImageReferenceTest {
     }
 
     @Test
+    void recognizesCommitShaTags() {
+        assertThat(new ImageReference("acme/app", "abc1234").isCommitSha()).isTrue();
+        assertThat(new ImageReference("acme/app", "0123456789abcdef0123456789abcdef01234567").isCommitSha()).isTrue();
+        assertThat(new ImageReference("acme/app", "abc123").isCommitSha()).isFalse();
+        assertThat(new ImageReference("acme/app", "ABC1234").isCommitSha()).isFalse();
+        assertThat(new ImageReference("acme/app", "main").isCommitSha()).isFalse();
+    }
+
+    @Test
     void commitShaTagsAreImmutableEverythingElseIsPulledAlways() {
         assertThat(new ImageReference("acme/app", "abc1234").pullPolicy()).isEqualTo("IfNotPresent");
         assertThat(new ImageReference("acme/app", "0123456789abcdef0123456789abcdef01234567").pullPolicy())

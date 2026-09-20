@@ -23,6 +23,10 @@ public class Deployment {
     @Column(name = "project_id", nullable = false, updatable = false)
     private UUID projectId;
 
+    /** Per-project deployment number (1, 2, 3, ...), unique within a project. */
+    @Column(nullable = false, updatable = false)
+    private int version;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private DeploymentStatus status = DeploymentStatus.PENDING;
@@ -50,8 +54,9 @@ public class Deployment {
         // required by JPA
     }
 
-    public Deployment(UUID projectId, String image, String commitSha) {
+    public Deployment(UUID projectId, int version, String image, String commitSha) {
         this.projectId = projectId;
+        this.version = version;
         this.image = image;
         this.commitSha = commitSha;
     }
@@ -89,6 +94,10 @@ public class Deployment {
 
     public UUID getProjectId() {
         return projectId;
+    }
+
+    public int getVersion() {
+        return version;
     }
 
     public DeploymentStatus getStatus() {

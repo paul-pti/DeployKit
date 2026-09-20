@@ -7,6 +7,7 @@ import java.util.UUID;
 public record DeploymentResponse(
         UUID id,
         UUID projectId,
+        int version,
         DeploymentStatus status,
         String image,
         String commitSha,
