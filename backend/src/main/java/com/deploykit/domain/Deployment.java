@@ -27,6 +27,10 @@ public class Deployment {
     @Column(nullable = false, updatable = false)
     private int version;
 
+    /** For a rollback: the version whose image is restored; null for a regular deployment. */
+    @Column(name = "rollback_of_version", updatable = false)
+    private Integer rollbackOfVersion;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private DeploymentStatus status = DeploymentStatus.PENDING;
@@ -55,10 +59,15 @@ public class Deployment {
     }
 
     public Deployment(UUID projectId, int version, String image, String commitSha) {
+        this(projectId, version, image, commitSha, null);
+    }
+
+    public Deployment(UUID projectId, int version, String image, String commitSha, Integer rollbackOfVersion) {
         this.projectId = projectId;
         this.version = version;
         this.image = image;
         this.commitSha = commitSha;
+        this.rollbackOfVersion = rollbackOfVersion;
     }
 
     public void markDeploying(Instant now) {
@@ -82,6 +91,14 @@ public class Deployment {
         this.finishedAt = now;
     }
 
+    /** A deployment that ran successfully and was later replaced by a rollback. */
+    public void markRolledBack() {
+        if (status != DeploymentStatus.RUNNING) {
+            throw new IllegalStateException("Cannot roll back a " + status + " deployment");
+        }
+        this.status = DeploymentStatus.ROLLED_BACK;
+    }
+
     private void requireActive(String action) {
         if (!status.isActive()) {
             throw new IllegalStateException("Cannot " + action + " a " + status + " deployment");
@@ -98,6 +115,10 @@ public class Deployment {
 
     public int getVersion() {
         return version;
+    }
+
+    public Integer getRollbackOfVersion() {
+        return rollbackOfVersion;
     }
 
     public DeploymentStatus getStatus() {

@@ -3,6 +3,8 @@ package com.deploykit.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -16,6 +18,7 @@ import com.deploykit.exception.ConflictException;
 import com.deploykit.exception.ResourceNotFoundException;
 import com.deploykit.repository.DeploymentLogRepository;
 import com.deploykit.repository.DeploymentRepository;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -154,6 +157,75 @@ class DeploymentRecorderTest {
 
         assertThat(recorder.list(projectId, failed, pageable)).isSameAs(failures);
         verify(deployments, never()).findByProjectId(any(), any());
+    }
+
+    private Deployment storedRollback(int version, int rollbackOf) {
+        Deployment deployment = new Deployment(projectId, version, "nginx:1.26-alpine", "abc1234", rollbackOf);
+        ReflectionTestUtils.setField(deployment, "id", deploymentId);
+        when(deployments.findById(deploymentId)).thenReturn(Optional.of(deployment));
+        return deployment;
+    }
+
+    private Deployment runningVersion(int version) {
+        Deployment deployment = new Deployment(projectId, version, "img:" + version, null);
+        ReflectionTestUtils.setField(deployment, "id", UUID.randomUUID());
+        deployment.markDeploying(Instant.now());
+        deployment.markRunning(Instant.now());
+        return deployment;
+    }
+
+    @Test
+    void aRollbackRecordsTheVersionItRestores() {
+        when(deployments.currentVersion(projectId)).thenReturn(4);
+
+        Deployment created = recorder.createPending(projectId, "nginx:1.26-alpine", "abc1234", 2);
+
+        assertThat(created.getVersion()).isEqualTo(5);
+        assertThat(created.getRollbackOfVersion()).isEqualTo(2);
+        ArgumentCaptor<DeploymentLog> log = ArgumentCaptor.forClass(DeploymentLog.class);
+        verify(logs).save(log.capture());
+        assertThat(log.getValue().getMessage()).contains("Rollback to version 2").contains("nginx:1.26-alpine");
+    }
+
+    @Test
+    void aRollbackMarksTheRunningVersionsItReplacedAsRolledBack() {
+        Deployment rollback = storedRollback(5, 2);
+        rollback.markDeploying(Instant.now());
+        Deployment third = runningVersion(3);
+        Deployment fourth = runningVersion(4);
+        when(deployments.findWithStatusBetweenVersions(projectId, DeploymentStatus.RUNNING, 2, 5))
+                .thenReturn(List.of(third, fourth));
+
+        recorder.markRunning(deploymentId);
+
+        assertThat(rollback.getStatus()).isEqualTo(DeploymentStatus.RUNNING);
+        assertThat(third.getStatus()).isEqualTo(DeploymentStatus.ROLLED_BACK);
+        assertThat(fourth.getStatus()).isEqualTo(DeploymentStatus.ROLLED_BACK);
+        // "Deployment is running" for the rollback, plus one note on each replaced version.
+        verify(logs, times(3)).save(any(DeploymentLog.class));
+    }
+
+    @Test
+    void aRegularDeploymentDoesNotTouchOtherVersionsWhenItStartsRunning() {
+        Deployment deployment = stored(3);
+        deployment.markDeploying(Instant.now());
+
+        recorder.markRunning(deploymentId);
+
+        verify(deployments, never()).findWithStatusBetweenVersions(any(), any(), anyInt(), anyInt());
+    }
+
+    @Test
+    void theRollbackLookupsDelegateToTheRepository() {
+        Deployment second = stored(2);
+        when(deployments.findFirstByProjectIdOrderByVersionDesc(projectId)).thenReturn(Optional.of(second));
+        when(deployments.findByProjectIdAndVersion(projectId, 2)).thenReturn(Optional.of(second));
+        when(deployments.findFirstByProjectIdAndVersionLessThanAndStatusInAndImageNotOrderByVersionDesc(
+                projectId, 3, DeploymentStatus.SUCCEEDED, "bad:1")).thenReturn(Optional.of(second));
+
+        assertThat(recorder.latest(projectId)).contains(second);
+        assertThat(recorder.findVersion(projectId, 2)).contains(second);
+        assertThat(recorder.previousSuccessful(projectId, 3, "bad:1")).contains(second);
     }
 
     @Test

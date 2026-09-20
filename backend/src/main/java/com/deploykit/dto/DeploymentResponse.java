@@ -8,6 +8,7 @@ public record DeploymentResponse(
         UUID id,
         UUID projectId,
         int version,
+        Integer rollbackOfVersion,
         DeploymentStatus status,
         String image,
         String commitSha,

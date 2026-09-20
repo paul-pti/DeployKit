@@ -3,8 +3,8 @@
 A self-service internal developer platform: point it at a GitHub repository, and DeployKit deploys the app to
 Kubernetes, with deployment history, logs and rollback.
 
-> **Status: Phase 7 of 12 complete.** You can create projects, deploy them to Kubernetes through Helm, follow each
-> deployment's history and read its logs from the dashboard. Rollback, authentication and AWS come next
+> **Status: Phase 8 of 12 complete.** You can create projects, deploy them to Kubernetes through Helm, follow each
+> deployment's history, read its logs and roll a deployment back from the dashboard. Authentication and AWS come next
 > (see the [Roadmap](#roadmap)). There is **no authentication yet**: do not expose the API.
 
 ## How it works
@@ -93,7 +93,7 @@ docker-compose.yml
 5. ~~GitHub Actions build pipeline~~
 6. ~~Deployment history~~
 7. ~~Logs~~
-8. Rollback
+8. ~~Rollback~~
 9. Authentication (JWT, USER/ADMIN)
 10. Testing (Testcontainers, Vitest, Playwright)
 11. Observability (Prometheus, Grafana, OpenTelemetry)

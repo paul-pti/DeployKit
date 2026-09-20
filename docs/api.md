@@ -15,6 +15,7 @@ The backend listens on `http://localhost:8080` when run locally. Errors follow R
 | `POST` | `/api/projects/{id}/deploy` | 202 + `Location`, deployment `PENDING` | 400 invalid image, 404, 409 deployment already in progress, 503 queue full |
 | `GET` | `/api/projects/{id}/deployments` | 200, one page, newest first | 400 malformed id or unknown status, 404 |
 | `GET` | `/api/deployments/{id}` | 200 | 400 malformed id, 404 |
+| `POST` | `/api/deployments/{id}/rollback` | 202 + `Location`, the new rollback deployment `PENDING` | 400 invalid `targetVersion`, 404 unknown deployment or version, 409 not allowed (see below), 503 queue full |
 | `GET` | `/api/deployments/{id}/logs` | 200, pod logs and workflow events | 400 malformed id or non-numeric `tail`, 404 |
 
 `POST /api/projects` body: `name` (required, ≤100, unique), `repositoryUrl` (required, `https://github.com/owner/repo`),
@@ -30,8 +31,9 @@ then runs is described in [deployment-engine.md](deployment-engine.md).
 `GET /api/projects/{id}/deployments` returns a page, newest first:
 
 ```json
-{ "content": [ { "id": "...", "version": 3, "status": "FAILED", "commitSha": null, "image": "ghcr.io/acme/app:main",
-                 "createdAt": "...", "startedAt": "...", "finishedAt": "...", "errorMessage": "Pod ... is ErrImagePull" } ],
+{ "content": [ { "id": "...", "version": 3, "rollbackOfVersion": null, "status": "FAILED", "commitSha": null,
+                 "image": "ghcr.io/acme/app:main", "createdAt": "...", "startedAt": "...", "finishedAt": "...",
+                 "errorMessage": "Pod ... is ErrImagePull" } ],
   "page": 0, "size": 20, "totalElements": 3, "totalPages": 1 }
 ```
 
@@ -47,6 +49,39 @@ then runs is described in [deployment-engine.md](deployment-engine.md).
 
 The project page shows the history as a table (version, commit, status, created, duration, image, failure reason) with a
 status filter and pagination, and refreshes itself every 3 seconds while a deployment is in flight.
+
+## Rollback
+
+`POST /api/deployments/{id}/rollback` undoes a deployment by redeploying an earlier version. `{id}` is the deployment
+to roll back, and it must be the **latest** deployment of its project. The optional body picks the version to restore:
+
+```json
+{ "targetVersion": 2 }
+```
+
+Without a body, the target is the most recent earlier version that **ran successfully** (`RUNNING` or `ROLLED_BACK`)
+**with a different image** than the deployment being rolled back: returning to the same image would change nothing.
+
+The rollback is **a new deployment**, with its own `version`, that goes through the normal
+[workflow](deployment-engine.md). It is recorded in the history with `rollbackOfVersion` set to the restored version,
+and the request returns `202` with that new deployment.
+
+When the rollback reaches `RUNNING`, the deployments it replaced (those that were `RUNNING` between the restored
+version and the rollback) become `ROLLED_BACK`, in the same transaction. A `FAILED` deployment stays `FAILED`, and if the
+rollback itself fails nothing else changes.
+
+`409 Conflict` is returned when:
+
+- the deployment is not the project's latest one (`Only the latest deployment (#N) can be rolled back`);
+- a deployment is still in progress (`wait for it to finish`);
+- there is no earlier successful deployment with a different image;
+- an explicit `targetVersion` is not older than the deployment, never ran successfully, or uses the same image.
+
+An unknown `targetVersion` is a `404`, and a `targetVersion` below 1 is a `400`.
+
+A rollback is only **exact for an immutable image tag**. A commit-SHA tag (what the build pipeline produces) always
+points to the same content. A moving tag, such as a branch name, may now point to newer content, so the rollback would
+deploy that; the deployment log then contains a `WARN` line saying so.
 
 ## Deployment logs
 

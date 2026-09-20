@@ -14,6 +14,7 @@ public class DeploymentMapper {
                 deployment.getId(),
                 deployment.getProjectId(),
                 deployment.getVersion(),
+                deployment.getRollbackOfVersion(),
                 deployment.getStatus(),
                 deployment.getImage(),
                 deployment.getCommitSha(),

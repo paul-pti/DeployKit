@@ -1,5 +1,5 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { deployProject, getDeployment, listDeployments } from '../services/deploymentService'
+import { deployProject, getDeployment, listDeployments, rollbackDeployment } from '../services/deploymentService'
 import { isActive, type DeployRequest, type DeploymentStatus } from '../types/deployment'
 
 const PAGE_SIZE = 10
@@ -9,6 +9,16 @@ export function useDeployProject(projectId: string) {
   return useMutation({
     mutationFn: (request?: DeployRequest) => deployProject(projectId, request),
     // The new deployment must show up in the history straight away.
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'deployments'] }),
+  })
+}
+
+/** Rolls the latest deployment back, to the previous successful version or to `targetVersion`. */
+export function useRollback(projectId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ deploymentId, targetVersion }: { deploymentId: string; targetVersion?: number }) =>
+      rollbackDeployment(deploymentId, targetVersion === undefined ? undefined : { targetVersion }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'deployments'] }),
   })
 }

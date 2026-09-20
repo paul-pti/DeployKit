@@ -20,6 +20,14 @@
 - **`409 A deployment is already in progress`:** wait for the current one to finish, it fails on its own after at most
   the rollout timeout.
 
+## Rollback
+
+- **`409 Only the latest deployment (#N) can be rolled back`:** roll back from the newest deployment of the project.
+- **`409 ... no earlier successful deployment with a different image`:** the project has no earlier version that ran
+  successfully with another image. Pass an explicit `targetVersion` or deploy an image first.
+- **The rollback deployed newer code than expected:** the restored image uses a moving tag (a branch name). Deploy
+  commit-SHA tags to make rollbacks exact; the deployment log has a `WARN` line for this case.
+
 ## Logs
 
 - **Logs say `container ... is waiting to start`:** the image is still being pulled or cannot be pulled. The

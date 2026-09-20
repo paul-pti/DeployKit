@@ -64,6 +64,38 @@ class DeploymentTest {
     }
 
     @Test
+    void aRunningDeploymentCanBeMarkedRolledBack() {
+        Deployment deployment = pending();
+        deployment.markDeploying(T1);
+        deployment.markRunning(T2);
+
+        deployment.markRolledBack();
+
+        assertThat(deployment.getStatus()).isEqualTo(DeploymentStatus.ROLLED_BACK);
+    }
+
+    @Test
+    void onlyARunningDeploymentCanBeRolledBack() {
+        Deployment failed = pending();
+        failed.markFailed("boom", T1);
+
+        assertThatThrownBy(failed::markRolledBack).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> pending().markRolledBack()).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void aRollbackRemembersTheVersionItRestores() {
+        assertThat(pending().getRollbackOfVersion()).isNull();
+        assertThat(new Deployment(UUID.randomUUID(), 5, "img:1", "abc1234", 2).getRollbackOfVersion()).isEqualTo(2);
+    }
+
+    @Test
+    void deploymentsThatRanSuccessfullyAreRollbackTargets() {
+        assertThat(DeploymentStatus.SUCCEEDED)
+                .containsExactlyInAnyOrder(DeploymentStatus.RUNNING, DeploymentStatus.ROLLED_BACK);
+    }
+
+    @Test
     void onlyInFlightStatusesAreActive() {
         assertThat(DeploymentStatus.ACTIVE)
                 .containsExactlyInAnyOrder(DeploymentStatus.PENDING, DeploymentStatus.BUILDING, DeploymentStatus.DEPLOYING);

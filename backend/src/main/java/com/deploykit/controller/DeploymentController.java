@@ -5,6 +5,7 @@ import com.deploykit.dto.DeployRequest;
 import com.deploykit.dto.DeploymentLogsResponse;
 import com.deploykit.dto.DeploymentPage;
 import com.deploykit.dto.DeploymentResponse;
+import com.deploykit.dto.RollbackRequest;
 import com.deploykit.service.DeploymentLogService;
 import com.deploykit.service.DeploymentService;
 import jakarta.validation.Valid;
@@ -64,6 +65,20 @@ public class DeploymentController {
             @RequestParam(defaultValue = "200") int tail,
             @RequestParam(defaultValue = "false") boolean previous) {
         return deploymentLogService.getLogs(id, tail, previous);
+    }
+
+    /**
+     * Rolls the latest deployment back by redeploying an earlier successful version, as a new deployment. The optional
+     * body {@code {"targetVersion": 2}} picks the version to restore. Returns immediately like a deploy.
+     */
+    @PostMapping("/api/deployments/{id}/rollback")
+    public ResponseEntity<DeploymentResponse> rollback(
+            @PathVariable UUID id,
+            @Valid @RequestBody(required = false) RollbackRequest request) {
+        DeploymentResponse rollback = deploymentService.rollback(id, request);
+        return ResponseEntity.accepted()
+                .location(URI.create("/api/deployments/" + rollback.id()))
+                .body(rollback);
     }
 
     @GetMapping("/api/deployments/{id}")

@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.contains;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -13,8 +15,10 @@ import static org.mockito.Mockito.when;
 import com.deploykit.domain.Deployment;
 import com.deploykit.domain.DeploymentStatus;
 import com.deploykit.domain.ImageReference;
+import com.deploykit.domain.LogLevel;
 import com.deploykit.domain.Project;
 import com.deploykit.dto.DeployRequest;
+import com.deploykit.dto.RollbackRequest;
 import com.deploykit.dto.DeploymentPage;
 import com.deploykit.dto.DeploymentResponse;
 import com.deploykit.exception.ConflictException;
@@ -67,6 +71,12 @@ class DeploymentServiceTest {
         ReflectionTestUtils.setField(project, "id", projectId);
         when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
         when(imageResolver.resolve(any(), any())).thenReturn(image);
+        when(recorder.createPending(any(), anyString(), any(), any())).thenAnswer(invocation -> {
+            Deployment deployment = new Deployment(invocation.getArgument(0), 8, invocation.getArgument(1),
+                    invocation.getArgument(2), invocation.getArgument(3));
+            ReflectionTestUtils.setField(deployment, "id", deploymentId);
+            return deployment;
+        });
         when(recorder.createPending(any(), anyString(), any())).thenAnswer(invocation -> {
             Deployment deployment = new Deployment(
                     invocation.getArgument(0), 7, invocation.getArgument(1), invocation.getArgument(2));
@@ -193,6 +203,174 @@ class DeploymentServiceTest {
 
         assertThatThrownBy(() -> service.list(projectId, null, 0, 20)).isInstanceOf(ResourceNotFoundException.class);
         verifyNoInteractions(recorder);
+    }
+
+    private Deployment version(int version, String image, String commitSha, DeploymentStatus status) {
+        Deployment deployment = new Deployment(projectId, version, image, commitSha);
+        ReflectionTestUtils.setField(deployment, "id", UUID.randomUUID());
+        ReflectionTestUtils.setField(deployment, "status", status);
+        return deployment;
+    }
+
+    /** Version 3 of the project, failed with a bad image, and the latest deployment. */
+    private Deployment latestFailure() {
+        Deployment source = version(3, "ghcr.io/acme/app:bad", null, DeploymentStatus.FAILED);
+        when(recorder.get(source.getId())).thenReturn(source);
+        when(recorder.latest(projectId)).thenReturn(Optional.of(source));
+        return source;
+    }
+
+    @Test
+    void rollbackRedeploysThePreviousSuccessfulVersionAsANewDeployment() {
+        Deployment source = latestFailure();
+        Deployment previous = version(2, "nginx:1.26-alpine", "abc1234", DeploymentStatus.RUNNING);
+        when(recorder.previousSuccessful(projectId, 3, "ghcr.io/acme/app:bad")).thenReturn(Optional.of(previous));
+
+        DeploymentResponse response = service.rollback(source.getId(), null);
+
+        verify(recorder).createPending(projectId, "nginx:1.26-alpine", "abc1234", 2);
+        assertThat(response.rollbackOfVersion()).isEqualTo(2);
+        assertThat(response.status()).isEqualTo(DeploymentStatus.PENDING);
+        assertThat(queued).hasSize(1);
+        queued.get(0).run();
+        verify(runner).run(deploymentId);
+    }
+
+    @Test
+    void rollbackWarnsWhenTheRestoredTagCouldHaveMoved() {
+        Deployment source = latestFailure();
+        Deployment previous = version(2, "ghcr.io/acme/app:main", null, DeploymentStatus.RUNNING);
+        when(recorder.previousSuccessful(projectId, 3, "ghcr.io/acme/app:bad")).thenReturn(Optional.of(previous));
+
+        service.rollback(source.getId(), null);
+
+        verify(recorder).log(eq(deploymentId), eq(LogLevel.WARN), contains("not a commit SHA"));
+    }
+
+    @Test
+    void rollbackToACommitShaTagDoesNotWarn() {
+        Deployment source = latestFailure();
+        Deployment previous = version(2, "ghcr.io/acme/app:abc1234def", "abc1234def", DeploymentStatus.RUNNING);
+        when(recorder.previousSuccessful(projectId, 3, "ghcr.io/acme/app:bad")).thenReturn(Optional.of(previous));
+
+        service.rollback(source.getId(), null);
+
+        verify(recorder, never()).log(any(), eq(LogLevel.WARN), anyString());
+    }
+
+    @Test
+    void rollbackCanTargetASpecificVersion() {
+        Deployment source = latestFailure();
+        Deployment older = version(1, "nginx:1.25-alpine", null, DeploymentStatus.ROLLED_BACK);
+        when(recorder.findVersion(projectId, 1)).thenReturn(Optional.of(older));
+
+        service.rollback(source.getId(), new RollbackRequest(1));
+
+        verify(recorder).createPending(projectId, "nginx:1.25-alpine", null, 1);
+    }
+
+    @Test
+    void onlyTheLatestDeploymentCanBeRolledBack() {
+        Deployment source = version(2, "img:2", null, DeploymentStatus.RUNNING);
+        Deployment latest = version(3, "img:3", null, DeploymentStatus.RUNNING);
+        when(recorder.get(source.getId())).thenReturn(source);
+        when(recorder.latest(projectId)).thenReturn(Optional.of(latest));
+
+        assertThatThrownBy(() -> service.rollback(source.getId(), null))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("#3");
+        verify(recorder, never()).createPending(any(), anyString(), any(), any());
+    }
+
+    @Test
+    void aDeploymentStillInProgressCannotBeRolledBack() {
+        Deployment source = version(3, "img:3", null, DeploymentStatus.DEPLOYING);
+        when(recorder.get(source.getId())).thenReturn(source);
+        when(recorder.latest(projectId)).thenReturn(Optional.of(source));
+
+        assertThatThrownBy(() -> service.rollback(source.getId(), null))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("in progress");
+    }
+
+    @Test
+    void rollbackFailsWhenThereIsNothingToRollBackTo() {
+        Deployment source = latestFailure();
+        when(recorder.previousSuccessful(projectId, 3, "ghcr.io/acme/app:bad")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.rollback(source.getId(), null))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("no earlier successful deployment");
+        verify(recorder, never()).createPending(any(), anyString(), any(), any());
+    }
+
+    @Test
+    void anUnknownTargetVersionIsNotFound() {
+        Deployment source = latestFailure();
+        when(recorder.findVersion(projectId, 9)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.rollback(source.getId(), new RollbackRequest(9)))
+                .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void theTargetMustBeOlderThanTheDeploymentBeingRolledBack() {
+        Deployment source = latestFailure();
+        when(recorder.findVersion(projectId, 3)).thenReturn(Optional.of(source));
+
+        assertThatThrownBy(() -> service.rollback(source.getId(), new RollbackRequest(3)))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("older");
+    }
+
+    @Test
+    void theTargetMustHaveRunSuccessfully() {
+        Deployment source = latestFailure();
+        Deployment failed = version(2, "nginx:1.26-alpine", null, DeploymentStatus.FAILED);
+        when(recorder.findVersion(projectId, 2)).thenReturn(Optional.of(failed));
+
+        assertThatThrownBy(() -> service.rollback(source.getId(), new RollbackRequest(2)))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("never ran successfully");
+    }
+
+    @Test
+    void theTargetMustUseADifferentImage() {
+        Deployment source = latestFailure();
+        Deployment sameImage = version(2, "ghcr.io/acme/app:bad", null, DeploymentStatus.RUNNING);
+        when(recorder.findVersion(projectId, 2)).thenReturn(Optional.of(sameImage));
+
+        assertThatThrownBy(() -> service.rollback(source.getId(), new RollbackRequest(2)))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("same image");
+    }
+
+    @Test
+    void aRollbackRejectedByTheRecorderQueuesNothing() {
+        Deployment source = latestFailure();
+        Deployment previous = version(2, "nginx:1.26-alpine", null, DeploymentStatus.RUNNING);
+        when(recorder.previousSuccessful(projectId, 3, "ghcr.io/acme/app:bad")).thenReturn(Optional.of(previous));
+        when(recorder.createPending(any(), anyString(), any(), any()))
+                .thenThrow(new ConflictException("A deployment is already in progress for this project"));
+
+        assertThatThrownBy(() -> service.rollback(source.getId(), null)).isInstanceOf(ConflictException.class);
+        assertThat(queued).isEmpty();
+    }
+
+    @Test
+    void aFullQueueFailsTheRollbackAndReportsBusy() {
+        Deployment source = latestFailure();
+        Deployment previous = version(2, "nginx:1.26-alpine", null, DeploymentStatus.RUNNING);
+        when(recorder.previousSuccessful(projectId, 3, "ghcr.io/acme/app:bad")).thenReturn(Optional.of(previous));
+        Executor rejecting = command -> {
+            throw new RejectedExecutionException("queue full");
+        };
+        DeploymentService busy = new DeploymentService(
+                projectRepository, imageResolver, recorder, runner, new DeploymentMapper(), rejecting);
+
+        assertThatThrownBy(() -> busy.rollback(source.getId(), null)).isInstanceOf(ServiceBusyException.class);
+
+        verify(recorder).markFailed(deploymentId, "Deployment queue is full");
     }
 
     @Test
