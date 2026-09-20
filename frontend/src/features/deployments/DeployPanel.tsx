@@ -1,22 +1,9 @@
 import { useState } from 'react'
 import { useDeployProject, useDeployment } from '../../hooks/useDeployments'
 import { parseApiError } from '../../lib/apiError'
-import { isActive, type DeploymentStatus } from '../../types/deployment'
-
-const badgeClass: Record<DeploymentStatus, string> = {
-  PENDING: 'bg-slate-100 text-slate-700',
-  BUILDING: 'bg-blue-100 text-blue-800',
-  DEPLOYING: 'bg-blue-100 text-blue-800',
-  RUNNING: 'bg-emerald-100 text-emerald-800',
-  FAILED: 'bg-red-100 text-red-800',
-  ROLLED_BACK: 'bg-amber-100 text-amber-800',
-}
-
-function formatDuration(start: string | null, end: string | null): string | null {
-  if (!start || !end) return null
-  const seconds = Math.max(0, Math.round((new Date(end).getTime() - new Date(start).getTime()) / 1000))
-  return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`
-}
+import { formatDuration } from '../../lib/format'
+import { isActive } from '../../types/deployment'
+import { StatusBadge } from './StatusBadge'
 
 export function DeployPanel({ projectId }: { projectId: string }) {
   const [image, setImage] = useState('')
@@ -68,11 +55,7 @@ export function DeployPanel({ projectId }: { projectId: string }) {
       {deployment && (
         <div className="space-y-1 text-sm" aria-live="polite">
           <p>
-            <span
-              className={`rounded-full px-2 py-0.5 text-xs font-medium ${badgeClass[deployment.status]}`}
-            >
-              {deployment.status}
-            </span>
+            <StatusBadge status={deployment.status} />
             {duration && <span className="ml-2 text-slate-500">in {duration}</span>}
           </p>
           <p className="break-all text-slate-600">{deployment.image}</p>

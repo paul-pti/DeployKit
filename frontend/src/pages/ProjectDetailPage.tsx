@@ -1,5 +1,6 @@
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { DeployPanel } from '../features/deployments/DeployPanel'
+import { DeploymentHistory } from '../features/deployments/DeploymentHistory'
 import { useDeleteProject, useProject } from '../hooks/useProjects'
 import { parseApiError } from '../lib/apiError'
 
@@ -50,6 +51,7 @@ export function ProjectDetailPage() {
             Delete project
           </button>
           <DeployPanel projectId={project.id} />
+          <DeploymentHistory projectId={project.id} />
         </>
       )}
     </section>
