@@ -13,6 +13,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.deploykit.domain.DeploymentStatus;
 import com.deploykit.dto.DeployRequest;
+import com.deploykit.dto.RollbackRequest;
 import com.deploykit.dto.DeploymentEvent;
 import com.deploykit.dto.DeploymentLogsResponse;
 import com.deploykit.dto.DeploymentPage;
@@ -56,7 +57,7 @@ class DeploymentControllerTest {
     private DeploymentLogService deploymentLogService;
 
     private DeploymentResponse pending() {
-        return new DeploymentResponse(deploymentId, projectId, 3, DeploymentStatus.PENDING,
+        return new DeploymentResponse(deploymentId, projectId, 3, null, DeploymentStatus.PENDING,
                 "ghcr.io/acme/app:main", null, null, null, Instant.now(), null);
     }
 
@@ -239,6 +240,71 @@ class DeploymentControllerTest {
     void logsRejectANonNumericTail() throws Exception {
         mockMvc.perform(get("/api/deployments/" + deploymentId + "/logs").param("tail", "many"))
                 .andExpect(status().isBadRequest());
+    }
+
+    private DeploymentResponse rollbackResponse(UUID id) {
+        return new DeploymentResponse(id, projectId, 4, 2, DeploymentStatus.PENDING,
+                "nginx:1.26-alpine", "abc1234", null, null, Instant.now(), null);
+    }
+
+    @Test
+    void rollbackWithoutBodyReturns202WithLocation() throws Exception {
+        UUID rollbackId = UUID.randomUUID();
+        when(deploymentService.rollback(eq(deploymentId), any())).thenReturn(rollbackResponse(rollbackId));
+
+        mockMvc.perform(post("/api/deployments/" + deploymentId + "/rollback"))
+                .andExpect(status().isAccepted())
+                .andExpect(header().string("Location", "/api/deployments/" + rollbackId))
+                .andExpect(jsonPath("$.id").value(rollbackId.toString()))
+                .andExpect(jsonPath("$.version").value(4))
+                .andExpect(jsonPath("$.rollbackOfVersion").value(2))
+                .andExpect(jsonPath("$.status").value("PENDING"));
+    }
+
+    @Test
+    void rollbackPassesTheRequestedTargetVersion() throws Exception {
+        when(deploymentService.rollback(eq(deploymentId), any())).thenReturn(rollbackResponse(UUID.randomUUID()));
+
+        mockMvc.perform(post("/api/deployments/" + deploymentId + "/rollback")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"targetVersion\":2}"))
+                .andExpect(status().isAccepted());
+
+        ArgumentCaptor<RollbackRequest> request = ArgumentCaptor.forClass(RollbackRequest.class);
+        verify(deploymentService).rollback(eq(deploymentId), request.capture());
+        assertThat(request.getValue()).isEqualTo(new RollbackRequest(2));
+    }
+
+    @Test
+    void rollbackRejectsANonPositiveTargetVersion() throws Exception {
+        mockMvc.perform(post("/api/deployments/" + deploymentId + "/rollback")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"targetVersion\":0}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors.targetVersion").exists());
+    }
+
+    @Test
+    void rollbackReturns404ForAnUnknownDeployment() throws Exception {
+        when(deploymentService.rollback(eq(deploymentId), any()))
+                .thenThrow(new ResourceNotFoundException("Deployment not found"));
+
+        mockMvc.perform(post("/api/deployments/" + deploymentId + "/rollback")).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void rollbackReturns409WhenItIsNotAllowed() throws Exception {
+        when(deploymentService.rollback(eq(deploymentId), any()))
+                .thenThrow(new ConflictException("Only the latest deployment (#4) can be rolled back"));
+
+        mockMvc.perform(post("/api/deployments/" + deploymentId + "/rollback"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value("Only the latest deployment (#4) can be rolled back"));
+    }
+
+    @Test
+    void rollbackReturns400ForAMalformedId() throws Exception {
+        mockMvc.perform(post("/api/deployments/not-a-uuid/rollback")).andExpect(status().isBadRequest());
     }
 
     @Test
