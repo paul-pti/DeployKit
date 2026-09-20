@@ -1,0 +1,62 @@
+# CI of DeployKit itself. The backend image is built by the same reusable pipeline that applications use.
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend (test, build, image)
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/build.yml
+    with:
+      working_directory: backend
+      image_suffix: -backend
+      java_version: "21"
+      test_command: ./mvnw -B test
+      build_command: ./mvnw -B -DskipTests package
+      # Pull requests only check that the image builds.
+      push: ${{ github.event_name != 'pull_request' }}
+
+  frontend:
+    name: Frontend (lint, build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+
+  helm:
+    name: Helm chart (lint, render)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: helm lint helm/deploykit-app
+      - name: Render with every optional resource enabled
+        run: >
+          helm template ci helm/deploykit-app
+          --set ingress.enabled=true
+          --set config.EXAMPLE=value
+          --set-string secretEnv.EXAMPLE=value
+          > /dev/null
