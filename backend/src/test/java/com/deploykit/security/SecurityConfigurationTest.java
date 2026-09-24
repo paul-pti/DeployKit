@@ -198,6 +198,14 @@ class SecurityConfigurationTest {
     }
 
     @Test
+    void actuatorPrometheusAndInfoArePublic() throws Exception {
+        // Neither controller is wired into this narrow slice, so a permitAll path 404s (no handler) instead of
+        // 401ing (blocked by security) — which is exactly what tells the two apart here.
+        mockMvc.perform(get("/actuator/prometheus")).andExpect(status().isNotFound());
+        mockMvc.perform(get("/actuator/info")).andExpect(status().isNotFound());
+    }
+
+    @Test
     void everythingOutsideTheApiIsClosed() throws Exception {
         assertUnauthorized(mockMvc.perform(get("/private")));
         mockMvc.perform(get("/private").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(TestUsers.ADMIN)))

@@ -17,10 +17,12 @@ import com.deploykit.exception.InvalidCredentialsException;
 import com.deploykit.exception.ResourceNotFoundException;
 import com.deploykit.exception.TooManyAttemptsException;
 import com.deploykit.mapper.UserMapper;
+import com.deploykit.observability.AuthMetrics;
 import com.deploykit.repository.UserRepository;
 import com.deploykit.security.JwtService;
 import com.deploykit.security.LoginAttemptLimiter;
 import com.deploykit.support.TestUsers;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Optional;
@@ -36,6 +38,7 @@ class AuthServiceTest {
     private UserRepository users;
     private PasswordEncoder encoder;
     private JwtService jwt;
+    private SimpleMeterRegistry meterRegistry;
     private AuthService service;
     private User alice;
 
@@ -44,8 +47,10 @@ class AuthServiceTest {
         users = mock(UserRepository.class);
         encoder = mock(PasswordEncoder.class);
         jwt = mock(JwtService.class);
+        meterRegistry = new SimpleMeterRegistry();
         when(encoder.encode(anyString())).thenReturn("decoy-hash");
-        service = new AuthService(users, encoder, jwt, new LoginAttemptLimiter(Clock.systemUTC()), new UserMapper());
+        service = new AuthService(users, encoder, jwt, new LoginAttemptLimiter(Clock.systemUTC()), new UserMapper(),
+                new AuthMetrics(meterRegistry));
 
         alice = new User("alice@example.com", "alice-hash", Role.USER);
         ReflectionTestUtils.setField(alice, "id", TestUsers.USER_ID);
@@ -134,6 +139,26 @@ class AuthServiceTest {
             assertThatThrownBy(() -> service.login(login("alice@example.com", "wrong"), CLIENT))
                     .isInstanceOf(InvalidCredentialsException.class);
         }
+    }
+
+    @Test
+    void recordsLoginAttemptsByOutcomeAsMetrics() {
+        service.login(login("alice@example.com", "correct-password"), CLIENT);
+        assertThatThrownBy(() -> service.login(login("alice@example.com", "wrong"), "10.0.0.9"))
+                .isInstanceOf(InvalidCredentialsException.class);
+        for (int i = 0; i < AuthService.MAX_FAILURES_PER_CLIENT; i++) {
+            assertThatThrownBy(() -> service.login(login("alice@example.com", "wrong"), "10.0.0.10"))
+                    .isInstanceOf(InvalidCredentialsException.class);
+        }
+        assertThatThrownBy(() -> service.login(login("alice@example.com", "correct-password"), "10.0.0.10"))
+                .isInstanceOf(TooManyAttemptsException.class);
+
+        assertThat(meterRegistry.get("deploykit.auth.login.attempts").tag("result", "success").counter().count())
+                .isEqualTo(1);
+        assertThat(meterRegistry.get("deploykit.auth.login.attempts").tag("result", "failure").counter().count())
+                .isEqualTo(1 + AuthService.MAX_FAILURES_PER_CLIENT);
+        assertThat(meterRegistry.get("deploykit.auth.login.attempts").tag("result", "blocked").counter().count())
+                .isEqualTo(1);
     }
 
     @Test

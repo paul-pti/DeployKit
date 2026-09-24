@@ -6,6 +6,7 @@ import com.deploykit.domain.DeploymentStatus;
 import com.deploykit.domain.LogLevel;
 import com.deploykit.exception.ConflictException;
 import com.deploykit.exception.ResourceNotFoundException;
+import com.deploykit.observability.DeploymentMetrics;
 import com.deploykit.repository.DeploymentLogRepository;
 import com.deploykit.repository.DeploymentRepository;
 import java.time.Instant;
@@ -34,10 +35,13 @@ public class DeploymentRecorder {
 
     private final DeploymentRepository deploymentRepository;
     private final DeploymentLogRepository logRepository;
+    private final DeploymentMetrics metrics;
 
-    public DeploymentRecorder(DeploymentRepository deploymentRepository, DeploymentLogRepository logRepository) {
+    public DeploymentRecorder(DeploymentRepository deploymentRepository, DeploymentLogRepository logRepository,
+                              DeploymentMetrics metrics) {
         this.deploymentRepository = deploymentRepository;
         this.logRepository = logRepository;
+        this.metrics = metrics;
     }
 
     public Deployment createPending(UUID projectId, String image, String commitSha) {
@@ -110,6 +114,7 @@ public class DeploymentRecorder {
         Deployment deployment = get(id);
         deployment.markRunning(Instant.now());
         addLog(id, LogLevel.INFO, "Deployment is running");
+        metrics.recordCompletion(deployment);
         if (deployment.getRollbackOfVersion() != null) {
             markReplacedAsRolledBack(deployment);
         }
@@ -121,14 +126,17 @@ public class DeploymentRecorder {
                         rollback.getRollbackOfVersion(), rollback.getVersion())
                 .forEach(replaced -> {
                     replaced.markRolledBack();
+                    metrics.recordStatusChange(DeploymentStatus.ROLLED_BACK, false);
                     addLog(replaced.getId(), LogLevel.INFO, "Rolled back by deployment #%d (restored version %d)"
                             .formatted(rollback.getVersion(), rollback.getRollbackOfVersion()));
                 });
     }
 
     public void markFailed(UUID id, String message) {
-        get(id).markFailed(truncate(message, MAX_ERROR_LENGTH), Instant.now());
+        Deployment deployment = get(id);
+        deployment.markFailed(truncate(message, MAX_ERROR_LENGTH), Instant.now());
         addLog(id, LogLevel.ERROR, "Deployment failed: " + message);
+        metrics.recordCompletion(deployment);
     }
 
     public void log(UUID id, LogLevel level, String message) {

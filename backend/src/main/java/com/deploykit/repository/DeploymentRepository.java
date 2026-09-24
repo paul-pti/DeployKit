@@ -16,6 +16,8 @@ public interface DeploymentRepository extends JpaRepository<Deployment, UUID> {
 
     boolean existsByProjectIdAndStatusIn(UUID projectId, Collection<DeploymentStatus> statuses);
 
+    long countByStatusIn(Collection<DeploymentStatus> statuses);
+
     List<Deployment> findAllByStatusIn(Collection<DeploymentStatus> statuses);
 
     Page<Deployment> findByProjectId(UUID projectId, Pageable pageable);
