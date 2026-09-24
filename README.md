@@ -3,10 +3,12 @@
 A self-service internal developer platform: point it at a GitHub repository, and DeployKit deploys the app to
 Kubernetes, with deployment history, logs and rollback.
 
-> **Status: Phase 9 of 12 complete.** You can sign in (roles `USER` and `ADMIN`), create projects, deploy them to
+> **Status: Phase 10 of 12 complete.** You can sign in (roles `USER` and `ADMIN`), create projects, deploy them to
 > Kubernetes through Helm, follow each deployment's history, read its logs and roll a deployment back from the
 > dashboard. Each user sees only their own projects. The API speaks plain HTTP: put TLS in front of it before exposing
-> it (see [docs/security.md](docs/security.md)).
+> it (see [docs/security.md](docs/security.md)). The test suite now also covers real infrastructure: a real
+> PostgreSQL (Testcontainers), frontend components (Vitest) and full browser flows (Playwright) — see
+> [docs/testing.md](docs/testing.md).
 
 ## How it works
 
@@ -98,6 +100,6 @@ docker-compose.yml
 7. ~~Logs~~
 8. ~~Rollback~~
 9. ~~Authentication (JWT, USER/ADMIN)~~
-10. Testing (Testcontainers, Vitest, Playwright)
+10. ~~Testing (Testcontainers, Vitest, Playwright)~~
 11. Observability (Prometheus, Grafana, OpenTelemetry)
 12. AWS (Terraform: VPC, EKS, ECR, RDS, IAM)

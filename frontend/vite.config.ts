@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig, loadEnv } from 'vite'
@@ -17,6 +18,12 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
         },
       },
+    },
+    test: {
+      environment: 'jsdom',
+      setupFiles: ['./src/test/setup.ts'],
+      // Playwright specs (e2e/) hit a real backend; Vitest only runs component/unit tests.
+      exclude: ['e2e/**', 'node_modules/**'],
     },
   }
 })
