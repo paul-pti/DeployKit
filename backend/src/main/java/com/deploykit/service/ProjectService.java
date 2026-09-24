@@ -6,11 +6,11 @@ import com.deploykit.dto.CreateProjectRequest;
 import com.deploykit.dto.ProjectResponse;
 import com.deploykit.exception.ConflictException;
 import com.deploykit.exception.DuplicateResourceException;
-import com.deploykit.exception.ResourceNotFoundException;
 import com.deploykit.mapper.ProjectMapper;
 import com.deploykit.repository.DeploymentRepository;
 import com.deploykit.repository.EnvironmentRepository;
 import com.deploykit.repository.ProjectRepository;
+import com.deploykit.security.CurrentUser;
 import java.util.List;
 import java.util.UUID;
 import org.slf4j.Logger;
@@ -30,21 +30,25 @@ public class ProjectService {
     private final DeploymentRepository deploymentRepository;
     private final EnvironmentRepository environmentRepository;
     private final KubernetesService kubernetesService;
+    private final ProjectAccess access;
 
     public ProjectService(ProjectRepository projectRepository, ProjectMapper projectMapper,
                           DeploymentRepository deploymentRepository, EnvironmentRepository environmentRepository,
-                          KubernetesService kubernetesService) {
+                          KubernetesService kubernetesService, ProjectAccess access) {
         this.projectRepository = projectRepository;
         this.projectMapper = projectMapper;
         this.deploymentRepository = deploymentRepository;
         this.environmentRepository = environmentRepository;
         this.kubernetesService = kubernetesService;
+        this.access = access;
     }
 
+    /** Creates a project owned by the caller; names only have to be unique among the caller's own projects. */
     @Transactional
     public ProjectResponse create(CreateProjectRequest request) {
+        CurrentUser user = access.currentUser();
         String name = request.name().trim();
-        if (projectRepository.existsByName(name)) {
+        if (projectRepository.existsByOwnerIdAndName(user.id(), name)) {
             throw new DuplicateResourceException("A project named '" + name + "' already exists");
         }
 
@@ -53,26 +57,29 @@ public class ProjectService {
                 : request.branch().trim();
 
         Project saved = projectRepository.saveAndFlush(
-                new Project(name, request.repositoryUrl().trim(), branch, request.port()));
+                new Project(name, request.repositoryUrl().trim(), branch, request.port(), user.id()));
         log.info("Created project id={} name={}", saved.getId(), saved.getName());
         return projectMapper.toResponse(saved);
     }
 
+    /** Administrators see every project, other users only their own. */
     @Transactional(readOnly = true)
     public List<ProjectResponse> list() {
-        return projectRepository.findAllByOrderByCreatedAtDesc().stream()
-                .map(projectMapper::toResponse)
-                .toList();
+        CurrentUser user = access.currentUser();
+        List<Project> projects = user.isAdmin()
+                ? projectRepository.findAllByOrderByCreatedAtDesc()
+                : projectRepository.findAllByOwnerIdOrderByCreatedAtDesc(user.id());
+        return projects.stream().map(projectMapper::toResponse).toList();
     }
 
     @Transactional(readOnly = true)
     public ProjectResponse get(UUID id) {
-        return projectMapper.toResponse(findOrThrow(id));
+        return projectMapper.toResponse(access.requireProject(id));
     }
 
     @Transactional
     public void delete(UUID id) {
-        Project project = findOrThrow(id);
+        Project project = access.requireProject(id);
         if (deploymentRepository.existsByProjectIdAndStatusIn(id, DeploymentStatus.ACTIVE)) {
             throw new ConflictException("Cannot delete a project while a deployment is in progress");
         }
@@ -89,10 +96,5 @@ public class ProjectService {
         } catch (RuntimeException e) {
             log.warn("Could not delete Kubernetes namespace {}; remove it manually", namespace, e);
         }
-    }
-
-    private Project findOrThrow(UUID id) {
-        return projectRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Project " + id + " not found"));
     }
 }

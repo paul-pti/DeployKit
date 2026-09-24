@@ -31,6 +31,7 @@ import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
+import com.deploykit.support.WebMvcSecurity;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -40,6 +41,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+@WebMvcSecurity
 @WebMvcTest(DeploymentController.class)
 @Import(GlobalExceptionHandler.class)
 class DeploymentControllerTest {

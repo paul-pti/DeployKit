@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
+import com.deploykit.support.TestUsers;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -50,7 +51,8 @@ class DeploymentLogServiceTest {
         projectRepository = mock(ProjectRepository.class);
         environmentRepository = mock(EnvironmentRepository.class);
         kubernetes = mock(KubernetesService.class);
-        service = new DeploymentLogService(recorder, projectRepository, environmentRepository, kubernetes);
+        service = new DeploymentLogService(recorder, projectRepository, environmentRepository, kubernetes,
+                new ProjectAccess(projectRepository, recorder, () -> TestUsers.ADMIN));
 
         Project project = new Project("demo", "https://github.com/acme/demo", "main", 8080);
         ReflectionTestUtils.setField(project, "id", projectId);
@@ -209,6 +211,17 @@ class DeploymentLogServiceTest {
         assertThat(response.pods().get(0).restarts()).isEqualTo(4);
         assertThat(response.pods().get(0).reason()).isEqualTo("CrashLoopBackOff");
         assertThat(response.pods().get(0).ready()).isFalse();
+    }
+
+    @Test
+    void aUserCannotReadTheLogsOfADeploymentOfSomeoneElsesProject() {
+        // The project of setUp has no owner, so it is not reachable by a plain user.
+        DeploymentLogService asUser = new DeploymentLogService(recorder, projectRepository, environmentRepository,
+                kubernetes, new ProjectAccess(projectRepository, recorder, () -> TestUsers.USER));
+
+        assertThatThrownBy(() -> asUser.getLogs(deploymentId, 200, false)).isInstanceOf(ResourceNotFoundException.class);
+
+        verifyNoInteractions(kubernetes);
     }
 
     @Test

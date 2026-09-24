@@ -34,13 +34,16 @@ public class DeploymentLogService {
     private final ProjectRepository projectRepository;
     private final EnvironmentRepository environmentRepository;
     private final KubernetesService kubernetesService;
+    private final ProjectAccess access;
 
     public DeploymentLogService(DeploymentRecorder recorder, ProjectRepository projectRepository,
-                                EnvironmentRepository environmentRepository, KubernetesService kubernetesService) {
+                                EnvironmentRepository environmentRepository, KubernetesService kubernetesService,
+                                ProjectAccess access) {
         this.recorder = recorder;
         this.projectRepository = projectRepository;
         this.environmentRepository = environmentRepository;
         this.kubernetesService = kubernetesService;
+        this.access = access;
     }
 
     private record PodsResult(List<PodLogs> pods, String note) {
@@ -51,7 +54,7 @@ public class DeploymentLogService {
     }
 
     public DeploymentLogsResponse getLogs(UUID deploymentId, int tailLines, boolean previous) {
-        Deployment deployment = recorder.get(deploymentId);
+        Deployment deployment = access.requireDeployment(deploymentId);
         List<DeploymentEvent> events = recorder.events(deploymentId).stream()
                 .map(entry -> new DeploymentEvent(entry.getLoggedAt(), entry.getLevel(), entry.getMessage()))
                 .toList();
