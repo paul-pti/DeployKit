@@ -47,3 +47,14 @@
 
 - **`kubectl port-forward` shows nothing:** something else may hold the port (`lsof -nP -iTCP:<port> -sTCP:LISTEN`),
   or the forward listens on IPv6 only: use `--address 127.0.0.1,::1`.
+
+## Observability
+
+- **Prometheus target `deploykit-backend` is "down":** the backend isn't reachable at the address Prometheus tried.
+  On Linux, `host.docker.internal` needs the `extra_hosts: host-gateway` entry already in `docker-compose.yml`; make
+  sure Docker is recent enough to support it.
+- **Grafana dashboard panels say "No data":** `rate()`/`histogram_quantile()` panels need at least two scrapes
+  (30s at the default 15s interval) after the first matching request; the raw gauges and legends populate immediately.
+- **Log warnings about failing to export a span / connection refused to 4318:** tracing is off by default
+  (`DEPLOYKIT_TRACING_SAMPLING=0`) precisely to avoid this. If you see it, either set it back to `0` or start Jaeger
+  (`docker compose --profile observability up -d jaeger`); see [observability.md](observability.md).

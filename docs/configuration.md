@@ -22,6 +22,8 @@ HTTP: put TLS in front of it before exposing it.
 | `DEPLOYKIT_JWT_SECRET` | authentication | **Required**, 32+ characters; the backend will not start without it. `openssl rand -base64 48` |
 | `DEPLOYKIT_JWT_TTL` | authentication | Token lifetime, default `60m` |
 | `DEPLOYKIT_ADMIN_EMAIL`, `DEPLOYKIT_ADMIN_PASSWORD` | authentication | First administrator, created at startup if absent (password 12+ characters). Optional once an admin exists |
+| `DEPLOYKIT_TRACING_SAMPLING` | observability | Fraction of requests traced (OpenTelemetry), default `0` (off) |
+| `DEPLOYKIT_OTLP_ENDPOINT` | observability | Where traces are exported, default `http://localhost:4318/v1/traces` |
 | `SERVER_PORT` | all | Default `8080` |
 | `LOG_LEVEL` | all | Level for `com.deploykit` (default `INFO`) |
 

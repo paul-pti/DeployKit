@@ -21,7 +21,7 @@ What protects DeployKit today (Phase 9), and what does not yet.
 
 | Risk | Status |
 |---|---|
-| Anonymous access to the API | Handled: 401 without a valid token; only login and health are public |
+| Anonymous access to the API | Handled: 401 without a valid token; only login, health and the metrics/info endpoints are public |
 | A user reads or deploys someone else's project | Handled: ownership checks, 404 |
 | Privilege escalation through a forged token | Handled: signature, issuer and expiry verified; role read from the signed claim |
 | Credential guessing | Partly: 5 failures per client and 30 per email in 5 minutes, then 429. In memory, per instance |
@@ -35,6 +35,7 @@ What protects DeployKit today (Phase 9), and what does not yet.
 | Audit trail | **Not handled**: who deployed what is not recorded |
 | Rate limiting of the whole API | **Not handled** (only login is limited) |
 | Secrets manager | **Not handled**: environment variables only |
+| `/actuator/prometheus` reachable by anyone who can reach the API | **Not handled**: unauthenticated on purpose, like health, so Prometheus can scrape it (see [observability.md](observability.md)); a `NetworkPolicy` restricting it to Prometheus's pod would close this once DeployKit itself runs in a cluster (Phase 12) |
 
 ## Known limits
 

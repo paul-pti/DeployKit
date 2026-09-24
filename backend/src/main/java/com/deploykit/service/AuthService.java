@@ -6,7 +6,9 @@ import com.deploykit.dto.LoginResponse;
 import com.deploykit.dto.UserResponse;
 import com.deploykit.exception.InvalidCredentialsException;
 import com.deploykit.exception.ResourceNotFoundException;
+import com.deploykit.exception.TooManyAttemptsException;
 import com.deploykit.mapper.UserMapper;
+import com.deploykit.observability.AuthMetrics;
 import com.deploykit.repository.UserRepository;
 import com.deploykit.security.JwtService;
 import com.deploykit.security.LoginAttemptLimiter;
@@ -32,16 +34,18 @@ public class AuthService {
     private final JwtService jwtService;
     private final LoginAttemptLimiter limiter;
     private final UserMapper userMapper;
+    private final AuthMetrics metrics;
     /** Checked when the email is unknown, so an unknown email costs as much time as a wrong password. */
     private final String decoyHash;
 
     public AuthService(UserRepository userRepository, PasswordEncoder passwordEncoder, JwtService jwtService,
-                       LoginAttemptLimiter limiter, UserMapper userMapper) {
+                       LoginAttemptLimiter limiter, UserMapper userMapper, AuthMetrics metrics) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.limiter = limiter;
         this.userMapper = userMapper;
+        this.metrics = metrics;
         this.decoyHash = passwordEncoder.encode(UUID.randomUUID().toString());
     }
 
@@ -52,8 +56,13 @@ public class AuthService {
     public LoginResponse login(LoginRequest request, String clientAddress) {
         String email = normalize(request.email());
         String clientKey = email + "|" + clientAddress;
-        limiter.assertAllowed(clientKey, MAX_FAILURES_PER_CLIENT);
-        limiter.assertAllowed(email, MAX_FAILURES_PER_EMAIL);
+        try {
+            limiter.assertAllowed(clientKey, MAX_FAILURES_PER_CLIENT);
+            limiter.assertAllowed(email, MAX_FAILURES_PER_EMAIL);
+        } catch (TooManyAttemptsException e) {
+            metrics.recordLoginAttempt("blocked");
+            throw e;
+        }
 
         Optional<User> user = userRepository.findByEmail(email);
         boolean passwordMatches = passwordEncoder.matches(
@@ -61,6 +70,7 @@ public class AuthService {
         if (user.isEmpty() || !passwordMatches) {
             limiter.recordFailure(clientKey);
             limiter.recordFailure(email);
+            metrics.recordLoginAttempt("failure");
             log.warn("Failed login attempt");
             throw new InvalidCredentialsException();
         }
@@ -68,6 +78,7 @@ public class AuthService {
         limiter.reset(clientKey);
         limiter.reset(email);
         JwtService.IssuedToken token = jwtService.issue(user.get());
+        metrics.recordLoginAttempt("success");
         log.info("User {} logged in", user.get().getId());
         return new LoginResponse(token.value(), "Bearer", token.expiresInSeconds(), userMapper.toResponse(user.get()));
     }

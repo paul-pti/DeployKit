@@ -43,7 +43,8 @@ public class SecurityConfiguration {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
-                        .requestMatchers("/api/health", "/actuator/health", "/actuator/health/**", "/error").permitAll()
+                        .requestMatchers("/api/health", "/actuator/health", "/actuator/health/**",
+                                "/actuator/info", "/actuator/prometheus", "/error").permitAll()
                         .requestMatchers("/api/users", "/api/users/**").hasRole("ADMIN")
                         .requestMatchers("/api/**").authenticated()
                         .anyRequest().denyAll())

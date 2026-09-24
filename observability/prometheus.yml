@@ -1,0 +1,11 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: deploykit-backend
+    metrics_path: /actuator/prometheus
+    static_configs:
+      # host.docker.internal: the backend run directly on the host with `./mvnw spring-boot:run` (the usual local
+      # setup). backend: the containerised backend, when `docker compose --profile full up` is used instead.
+      # Prometheus just marks whichever one isn't running as "down" — harmless.
+      - targets: ["host.docker.internal:8080", "backend:8080"]

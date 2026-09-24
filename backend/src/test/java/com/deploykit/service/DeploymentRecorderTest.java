@@ -16,8 +16,10 @@ import com.deploykit.domain.DeploymentStatus;
 import com.deploykit.domain.LogLevel;
 import com.deploykit.exception.ConflictException;
 import com.deploykit.exception.ResourceNotFoundException;
+import com.deploykit.observability.DeploymentMetrics;
 import com.deploykit.repository.DeploymentLogRepository;
 import com.deploykit.repository.DeploymentRepository;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -39,13 +41,15 @@ class DeploymentRecorderTest {
 
     private DeploymentRepository deployments;
     private DeploymentLogRepository logs;
+    private SimpleMeterRegistry meterRegistry;
     private DeploymentRecorder recorder;
 
     @BeforeEach
     void setUp() {
         deployments = mock(DeploymentRepository.class);
         logs = mock(DeploymentLogRepository.class);
-        recorder = new DeploymentRecorder(deployments, logs);
+        meterRegistry = new SimpleMeterRegistry();
+        recorder = new DeploymentRecorder(deployments, logs, new DeploymentMetrics(meterRegistry, deployments));
         when(deployments.saveAndFlush(any(Deployment.class))).thenAnswer(invocation -> {
             Deployment deployment = invocation.getArgument(0);
             ReflectionTestUtils.setField(deployment, "id", deploymentId);
@@ -111,6 +115,9 @@ class DeploymentRecorderTest {
         assertThat(deployment.getStatus()).isEqualTo(DeploymentStatus.RUNNING);
         assertThat(deployment.getFinishedAt()).isNotNull();
         verify(logs).save(any(DeploymentLog.class));
+        assertThat(meterRegistry.get("deploykit.deployments.total")
+                .tag("status", "RUNNING").tag("rollback", "false").counter().count()).isEqualTo(1);
+        assertThat(meterRegistry.get("deploykit.deployment.duration").timer().count()).isEqualTo(1);
     }
 
     @Test
@@ -124,6 +131,8 @@ class DeploymentRecorderTest {
         ArgumentCaptor<DeploymentLog> log = ArgumentCaptor.forClass(DeploymentLog.class);
         verify(logs).save(log.capture());
         assertThat(log.getValue().getLevel()).isEqualTo(LogLevel.ERROR);
+        assertThat(meterRegistry.get("deploykit.deployments.total")
+                .tag("status", "FAILED").tag("rollback", "false").counter().count()).isEqualTo(1);
     }
 
     @Test
@@ -203,6 +212,10 @@ class DeploymentRecorderTest {
         assertThat(fourth.getStatus()).isEqualTo(DeploymentStatus.ROLLED_BACK);
         // "Deployment is running" for the rollback, plus one note on each replaced version.
         verify(logs, times(3)).save(any(DeploymentLog.class));
+        assertThat(meterRegistry.get("deploykit.deployments.total")
+                .tag("status", "RUNNING").tag("rollback", "true").counter().count()).isEqualTo(1);
+        assertThat(meterRegistry.get("deploykit.deployments.total")
+                .tag("status", "ROLLED_BACK").counter().count()).isEqualTo(2);
     }
 
     @Test
