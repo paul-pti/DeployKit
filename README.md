@@ -3,12 +3,13 @@
 A self-service internal developer platform: point it at a GitHub repository, and DeployKit deploys the app to
 Kubernetes, with deployment history, logs and rollback.
 
-> **Status: Phase 10 of 12 complete.** You can sign in (roles `USER` and `ADMIN`), create projects, deploy them to
+> **Status: Phase 11 of 12 complete.** You can sign in (roles `USER` and `ADMIN`), create projects, deploy them to
 > Kubernetes through Helm, follow each deployment's history, read its logs and roll a deployment back from the
 > dashboard. Each user sees only their own projects. The API speaks plain HTTP: put TLS in front of it before exposing
-> it (see [docs/security.md](docs/security.md)). The test suite now also covers real infrastructure: a real
-> PostgreSQL (Testcontainers), frontend components (Vitest) and full browser flows (Playwright) — see
-> [docs/testing.md](docs/testing.md).
+> it (see [docs/security.md](docs/security.md)). The test suite also covers real infrastructure: a real PostgreSQL
+> (Testcontainers), frontend components (Vitest) and full browser flows (Playwright) — see
+> [docs/testing.md](docs/testing.md). The backend exposes Prometheus metrics and OpenTelemetry traces, with an
+> optional local Grafana dashboard — see [docs/observability.md](docs/observability.md).
 
 ## How it works
 
@@ -71,6 +72,7 @@ The Compose ports are bound to `127.0.0.1`, so nothing is reachable from the net
 | Architecture and data model | [docs/architecture.md](docs/architecture.md) |
 | Architecture decisions | [docs/adr](docs/adr) |
 | Authentication, roles, risks and what is still missing | [docs/security.md](docs/security.md) |
+| Metrics, traces and the local Grafana stack | [docs/observability.md](docs/observability.md) |
 | Build pipeline, tags and secrets (CI/CD) | [docs/github-actions.md](docs/github-actions.md) |
 | Configuration and environment variables | [docs/configuration.md](docs/configuration.md) |
 | Local Kubernetes and the Helm chart | [docs/local-kubernetes.md](docs/local-kubernetes.md) |
@@ -101,5 +103,5 @@ docker-compose.yml
 8. ~~Rollback~~
 9. ~~Authentication (JWT, USER/ADMIN)~~
 10. ~~Testing (Testcontainers, Vitest, Playwright)~~
-11. Observability (Prometheus, Grafana, OpenTelemetry)
+11. ~~Observability (Prometheus, Grafana, OpenTelemetry)~~
 12. AWS (Terraform: VPC, EKS, ECR, RDS, IAM)

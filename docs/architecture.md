@@ -76,3 +76,10 @@ Components never call Axios directly; they use hooks that wrap services.
 
 Authentication lives in `features/auth` (`AuthProvider`, `RequireAuth`, `RequireAdmin`) and `lib/authStorage`. The Axios
 client adds the bearer token and, on a 401 outside login, ends the session.
+
+## Observability
+
+The `observability` package (`DeploymentMetrics`, `AuthMetrics`) records Micrometer metrics, called only from
+`DeploymentRecorder` and `AuthService`. Metrics are exposed at `/actuator/prometheus`; traces (Micrometer Tracing +
+OpenTelemetry, OTLP export, off by default) cover HTTP requests and the security filter chain. See
+[observability.md](observability.md) for the metrics themselves and the local Prometheus/Grafana/Jaeger stack.
