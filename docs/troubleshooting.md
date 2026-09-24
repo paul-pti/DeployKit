@@ -10,6 +10,16 @@
 - **Backend fails with `Port 8080 was already in use`:** another process holds it
   (`lsof -nP -iTCP:8080 -sTCP:LISTEN`).
 
+## Authentication
+
+- **Backend fails at startup mentioning `DEPLOYKIT_JWT_SECRET`:** add it to `.env` (`openssl rand -base64 48`).
+- **Cannot sign in on a fresh database:** set `DEPLOYKIT_ADMIN_EMAIL` and `DEPLOYKIT_ADMIN_PASSWORD` (12+ characters) and
+  restart; the administrator is created only if no account with that email exists.
+- **`429 Too many attempts`:** wait for `Retry-After` (up to 5 minutes) or restart the backend, which resets the limiter.
+- **Suddenly back on the login page:** the token expired (`DEPLOYKIT_JWT_TTL`, 60 minutes) or the secret changed.
+- **A project disappeared for a user:** projects created before Phase 9 have no owner and are visible to administrators
+  only; an administrator can recreate them under the right account.
+
 ## Deployments
 
 - **Deployment `FAILED` with `Helm chart not found`:** start the backend from `backend/`, or set `DEPLOYKIT_HELM_CHART_PATH`.

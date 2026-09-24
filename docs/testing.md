@@ -14,6 +14,11 @@ namespace, deployment shape, rollout status, pods, logs, error mapping) and the 
 `HelmService` and `ProcessCommandRunner` (real processes), image resolution, naming, the deploy, history and logs
 endpoints, and `DeploymentLogService`.
 
+Authentication is covered at three levels: JWT issuing and validation, the login limiter and `SecurityProperties`;
+`SecurityConfigurationTest`, which runs the real filter chain (no, garbage, tampered, forged-role, expired, wrong-issuer
+and unsigned tokens all give 401; a `USER` gets 403 on `/api/users`); and the ownership rules in the services
+(`ProjectAccessTest` and the service tests). Controller tests use `@WebMvcSecurity` and a default `USER` token.
+
 `KubernetesServiceClusterTest` runs against a real cluster (server-side apply, rollout, scaling, pods, logs) and is
 skipped unless enabled. With the kind cluster running:
 

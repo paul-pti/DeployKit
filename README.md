@@ -3,9 +3,10 @@
 A self-service internal developer platform: point it at a GitHub repository, and DeployKit deploys the app to
 Kubernetes, with deployment history, logs and rollback.
 
-> **Status: Phase 8 of 12 complete.** You can create projects, deploy them to Kubernetes through Helm, follow each
-> deployment's history, read its logs and roll a deployment back from the dashboard. Authentication and AWS come next
-> (see the [Roadmap](#roadmap)). There is **no authentication yet**: do not expose the API.
+> **Status: Phase 9 of 12 complete.** You can sign in (roles `USER` and `ADMIN`), create projects, deploy them to
+> Kubernetes through Helm, follow each deployment's history, read its logs and roll a deployment back from the
+> dashboard. Each user sees only their own projects. The API speaks plain HTTP: put TLS in front of it before exposing
+> it (see [docs/security.md](docs/security.md)).
 
 ## How it works
 
@@ -43,14 +44,15 @@ The reasons behind these choices are recorded in [docs/adr](docs/adr).
 Prerequisites: Docker, Node 20.19+ and JDK 21.
 
 ```bash
-cp .env.example .env                    # then set POSTGRES_PASSWORD (.env is gitignored)
+cp .env.example .env                    # then set POSTGRES_PASSWORD, DEPLOYKIT_JWT_SECRET (openssl rand -base64 48)
+                                        # and the first admin's DEPLOYKIT_ADMIN_EMAIL / _PASSWORD (.env is gitignored)
 docker compose up -d postgres
 cd backend && SPRING_PROFILES_ACTIVE=local ./mvnw spring-boot:run     # API on :8080, Flyway migrates on startup
 cd frontend && npm install && npm run dev                             # dashboard on http://localhost:5173
 ```
 
-Check it works: `curl localhost:8080/api/health` returns `{"status":"UP"}`, and the dashboard header shows
-"Backend UP". Without a local JDK 21, `docker compose --profile full up --build` runs the backend in a container, but
+Check it works: `curl localhost:8080/api/health` returns `{"status":"UP"}`, and the dashboard shows the sign-in page;
+sign in with the admin from `.env`, then create other accounts from **Users**. Without a local JDK 21, `docker compose --profile full up --build` runs the backend in a container, but
 it cannot deploy (no Helm or kubeconfig inside).
 
 The Compose ports are bound to `127.0.0.1`, so nothing is reachable from the network.
@@ -66,6 +68,7 @@ The Compose ports are bound to `127.0.0.1`, so nothing is reachable from the net
 | How a deployment runs (states, rollout, limits) | [docs/deployment-engine.md](docs/deployment-engine.md) |
 | Architecture and data model | [docs/architecture.md](docs/architecture.md) |
 | Architecture decisions | [docs/adr](docs/adr) |
+| Authentication, roles, risks and what is still missing | [docs/security.md](docs/security.md) |
 | Build pipeline, tags and secrets (CI/CD) | [docs/github-actions.md](docs/github-actions.md) |
 | Configuration and environment variables | [docs/configuration.md](docs/configuration.md) |
 | Local Kubernetes and the Helm chart | [docs/local-kubernetes.md](docs/local-kubernetes.md) |
@@ -94,7 +97,7 @@ docker-compose.yml
 6. ~~Deployment history~~
 7. ~~Logs~~
 8. ~~Rollback~~
-9. Authentication (JWT, USER/ADMIN)
+9. ~~Authentication (JWT, USER/ADMIN)~~
 10. Testing (Testcontainers, Vitest, Playwright)
 11. Observability (Prometheus, Grafana, OpenTelemetry)
 12. AWS (Terraform: VPC, EKS, ECR, RDS, IAM)
