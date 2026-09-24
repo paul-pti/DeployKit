@@ -25,7 +25,8 @@ jobs:
       working_directory: backend
       image_suffix: -backend
       java_version: "21"
-      test_command: ./mvnw -B test
+      # verify (not test) also runs the Testcontainers integration tests (*IT.java); ubuntu-latest has Docker.
+      test_command: ./mvnw -B verify
       build_command: ./mvnw -B -DskipTests package
       # Pull requests only check that the image builds.
       push: ${{ github.event_name != 'pull_request' }}
@@ -45,7 +46,80 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
       - run: npm run lint
+      - run: npm run test
       - run: npm run build
+
+  e2e:
+    name: End-to-end (Playwright)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: deploykit
+          POSTGRES_USER: deploykit
+          POSTGRES_PASSWORD: e2e-postgres-password
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U deploykit -d deploykit"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      DB_URL: jdbc:postgresql://localhost:5432/deploykit
+      DB_USERNAME: deploykit
+      DB_PASSWORD: e2e-postgres-password
+      # Test-only values, never used outside this ephemeral job.
+      DEPLOYKIT_JWT_SECRET: e2e-jwt-secret-e2e-jwt-secret-32-chars-minimum
+      DEPLOYKIT_ADMIN_EMAIL: admin@example.com
+      DEPLOYKIT_ADMIN_PASSWORD: e2e-admin-password-123
+      E2E_ADMIN_EMAIL: admin@example.com
+      E2E_ADMIN_PASSWORD: e2e-admin-password-123
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Build and start the backend
+        working-directory: backend
+        run: |
+          ./mvnw -B -q -DskipTests package
+          nohup java -jar target/deploykit-backend-*.jar > backend.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf http://localhost:8080/api/health && exit 0; sleep 2; done
+          echo "::error::Backend did not become ready"; cat backend.log; exit 1
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies and the Playwright browser
+        working-directory: frontend
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Start the frontend (dev server, so /api is proxied to the backend)
+        working-directory: frontend
+        run: |
+          nohup npm run dev -- --port 5173 > frontend.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf http://localhost:5173 >/dev/null && exit 0; sleep 2; done
+          echo "::error::Frontend did not become ready"; cat frontend.log; exit 1
+
+      - name: Run the end-to-end tests
+        working-directory: frontend
+        run: npm run test:e2e
+
+      - name: Upload the Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: frontend/playwright-report/
+          retention-days: 7
 
   helm:
     name: Helm chart (lint, render)
