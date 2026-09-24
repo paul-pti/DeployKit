@@ -7,7 +7,9 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface ProjectRepository extends JpaRepository<Project, UUID> {
 
-    boolean existsByName(String name);
+    boolean existsByOwnerIdAndName(UUID ownerId, String name);
+
+    List<Project> findAllByOwnerIdOrderByCreatedAtDesc(UUID ownerId);
 
     List<Project> findAllByOrderByCreatedAtDesc();
 }

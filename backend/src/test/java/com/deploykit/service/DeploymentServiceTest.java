@@ -35,6 +35,8 @@ import java.util.UUID;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
 import org.junit.jupiter.api.BeforeEach;
+import com.deploykit.security.CurrentUser;
+import com.deploykit.support.TestUsers;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -49,6 +51,7 @@ class DeploymentServiceTest {
     private final ImageReference image = new ImageReference("ghcr.io/acme/app", "main");
 
     private ProjectRepository projectRepository;
+    private ProjectAccess access;
     private ImageResolver imageResolver;
     private DeploymentRecorder recorder;
     private DeploymentRunner runner;
@@ -65,7 +68,9 @@ class DeploymentServiceTest {
         runner = mock(DeploymentRunner.class);
         queued = new ArrayList<>();
         executor = queued::add;
-        service = new DeploymentService(projectRepository, imageResolver, recorder, runner, new DeploymentMapper(), executor);
+        // Administrators can reach every project; the tests about ownership build a service for a plain user.
+        access = new ProjectAccess(projectRepository, recorder, () -> TestUsers.ADMIN);
+        service = new DeploymentService(access, imageResolver, recorder, runner, new DeploymentMapper(), executor);
 
         project = new Project("demo", "https://github.com/acme/app", "main", 8080);
         ReflectionTestUtils.setField(project, "id", projectId);
@@ -142,7 +147,7 @@ class DeploymentServiceTest {
             throw new RejectedExecutionException("queue full");
         };
         DeploymentService busy = new DeploymentService(
-                projectRepository, imageResolver, recorder, runner, new DeploymentMapper(), rejecting);
+                access, imageResolver, recorder, runner, new DeploymentMapper(), rejecting);
 
         assertThatThrownBy(() -> busy.deploy(projectId, null)).isInstanceOf(ServiceBusyException.class);
 
@@ -199,7 +204,7 @@ class DeploymentServiceTest {
 
     @Test
     void listOfAnUnknownProjectIsNotFound() {
-        when(projectRepository.existsById(projectId)).thenReturn(false);
+        when(projectRepository.findById(projectId)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.list(projectId, null, 0, 20)).isInstanceOf(ResourceNotFoundException.class);
         verifyNoInteractions(recorder);
@@ -366,11 +371,52 @@ class DeploymentServiceTest {
             throw new RejectedExecutionException("queue full");
         };
         DeploymentService busy = new DeploymentService(
-                projectRepository, imageResolver, recorder, runner, new DeploymentMapper(), rejecting);
+                access, imageResolver, recorder, runner, new DeploymentMapper(), rejecting);
 
         assertThatThrownBy(() -> busy.rollback(source.getId(), null)).isInstanceOf(ServiceBusyException.class);
 
         verify(recorder).markFailed(deploymentId, "Deployment queue is full");
+    }
+
+    private DeploymentService serviceFor(CurrentUser user) {
+        return new DeploymentService(new ProjectAccess(projectRepository, recorder, () -> user),
+                imageResolver, recorder, runner, new DeploymentMapper(), executor);
+    }
+
+    @Test
+    void aUserCanDeployTheirOwnProject() {
+        ReflectionTestUtils.setField(project, "ownerId", TestUsers.USER_ID);
+
+        serviceFor(TestUsers.USER).deploy(projectId, null);
+
+        assertThat(queued).hasSize(1);
+    }
+
+    @Test
+    void aUserCannotDeploySomeoneElsesProject() {
+        ReflectionTestUtils.setField(project, "ownerId", TestUsers.OTHER_USER_ID);
+        DeploymentService asUser = serviceFor(TestUsers.USER);
+
+        assertThatThrownBy(() -> asUser.deploy(projectId, null)).isInstanceOf(ResourceNotFoundException.class);
+
+        verifyNoInteractions(recorder);
+        assertThat(queued).isEmpty();
+    }
+
+    @Test
+    void aUserCannotListReadOrRollBackTheDeploymentsOfSomeoneElsesProject() {
+        ReflectionTestUtils.setField(project, "ownerId", TestUsers.OTHER_USER_ID);
+        Deployment foreign = version(3, "nginx:1", null, DeploymentStatus.RUNNING);
+        when(recorder.get(foreign.getId())).thenReturn(foreign);
+        DeploymentService asUser = serviceFor(TestUsers.USER);
+
+        assertThatThrownBy(() -> asUser.list(projectId, null, 0, 20)).isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() -> asUser.get(foreign.getId())).isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() -> asUser.rollback(foreign.getId(), null)).isInstanceOf(ResourceNotFoundException.class);
+
+        verify(recorder, never()).list(any(), any(), any());
+        verify(recorder, never()).createPending(any(), anyString(), any(), any());
+        assertThat(queued).isEmpty();
     }
 
     @Test

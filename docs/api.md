@@ -1,13 +1,15 @@
 # API reference
 
 The backend listens on `http://localhost:8080` when run locally. Errors follow RFC 7807
-(`application/problem+json`). The API has no authentication yet (Phase 9), do not expose it.
+(`application/problem+json`). Every endpoint except login and health needs `Authorization: Bearer <token>`; see
+[Authentication](#authentication). Endpoints about projects and deployments only see **your own** (administrators see
+all): someone else's resource answers 404, like a missing one.
 
 ## Endpoints
 
 | Method | Path | Success | Errors |
 |---|---|---|---|
-| `GET` | `/api/health` | 200 `{"status":"UP"}` | |
+| `GET` | `/api/health` | 200 `{"status":"UP"}` (public) | |
 | `POST` | `/api/projects` | 201 + `Location` | 400 validation (`errors` per field), 409 duplicate name |
 | `GET` | `/api/projects` | 200, newest first | |
 | `GET` | `/api/projects/{id}` | 200 | 400 malformed id, 404 |
@@ -25,6 +27,25 @@ The backend listens on `http://localhost:8080` when run locally. Errors follow R
 `commitSha`. Without a body the image is `ghcr.io/<owner>/<repo>:<branch>`, which the
 [build pipeline](github-actions.md) publishes, tagged with the commit SHA and the branch name. How the deployment
 then runs is described in [deployment-engine.md](deployment-engine.md).
+
+## Authentication
+
+| Method | Path | Success | Errors |
+|---|---|---|---|
+| `POST` | `/api/auth/login` (public) | 200 `{accessToken, tokenType, expiresIn, user}` | 400 validation, 401 wrong email or password, 429 too many attempts (`Retry-After`) |
+| `GET` | `/api/auth/me` | 200 `{id, email, role, createdAt}` | 401 |
+| `GET` | `/api/users` (ADMIN) | 200 | 401, 403 |
+| `POST` | `/api/users` (ADMIN) | 201 `{id, email, role, createdAt}` | 400 validation or weak password, 401, 403, 409 email already used |
+
+`POST /api/auth/login` body: `email`, `password`. `POST /api/users` body: `email`, `password` (12 to 72 characters),
+`role` (`USER` or `ADMIN`). Every protected endpoint answers **401** without a valid token (`WWW-Authenticate: Bearer`)
+and **403** when the role is not enough.
+
+```bash
+TOKEN=$(curl -s localhost:8080/api/auth/login -H 'Content-Type: application/json' \
+  -d '{"email":"admin@example.com","password":"..."}' | jq -r .accessToken)
+curl -H "Authorization: Bearer $TOKEN" localhost:8080/api/projects
+```
 
 ## Deployment history
 

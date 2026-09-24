@@ -18,6 +18,15 @@ server:
   shutdown: graceful
 
 deploykit:
+  security:
+    jwt:
+      # Required, no default: at least 32 characters (openssl rand -base64 48). The backend refuses to start without it.
+      secret: ${DEPLOYKIT_JWT_SECRET:}
+      ttl: ${DEPLOYKIT_JWT_TTL:60m}
+    # First administrator, created at startup only while no user exists.
+    bootstrap-admin:
+      email: ${DEPLOYKIT_ADMIN_EMAIL:}
+      password: ${DEPLOYKIT_ADMIN_PASSWORD:}
   helm:
     binary: ${HELM_BINARY:helm}
     # Relative to the working directory: the backend is started from backend/ locally.

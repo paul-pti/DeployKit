@@ -13,7 +13,6 @@ import com.deploykit.exception.ConflictException;
 import com.deploykit.exception.ResourceNotFoundException;
 import com.deploykit.exception.ServiceBusyException;
 import com.deploykit.mapper.DeploymentMapper;
-import com.deploykit.repository.ProjectRepository;
 import java.util.Collection;
 import java.util.Locale;
 import java.util.UUID;
@@ -41,17 +40,17 @@ public class DeploymentService {
 
     private static final Logger log = LoggerFactory.getLogger(DeploymentService.class);
 
-    private final ProjectRepository projectRepository;
+    private final ProjectAccess access;
     private final ImageResolver imageResolver;
     private final DeploymentRecorder recorder;
     private final DeploymentRunner runner;
     private final DeploymentMapper mapper;
     private final Executor deploymentExecutor;
 
-    public DeploymentService(ProjectRepository projectRepository, ImageResolver imageResolver,
+    public DeploymentService(ProjectAccess access, ImageResolver imageResolver,
                              DeploymentRecorder recorder, DeploymentRunner runner, DeploymentMapper mapper,
                              @Qualifier("deploymentExecutor") Executor deploymentExecutor) {
-        this.projectRepository = projectRepository;
+        this.access = access;
         this.imageResolver = imageResolver;
         this.recorder = recorder;
         this.runner = runner;
@@ -60,8 +59,7 @@ public class DeploymentService {
     }
 
     public DeploymentResponse deploy(UUID projectId, DeployRequest request) {
-        Project project = projectRepository.findById(projectId)
-                .orElseThrow(() -> new ResourceNotFoundException("Project " + projectId + " not found"));
+        Project project = access.requireProject(projectId);
         ImageReference image = imageResolver.resolve(project, request);
         return queue(project.getId(), image.toString(), commitShaOf(request, image), null);
     }
@@ -73,7 +71,7 @@ public class DeploymentService {
      * through the normal workflow.
      */
     public DeploymentResponse rollback(UUID deploymentId, RollbackRequest request) {
-        Deployment source = recorder.get(deploymentId);
+        Deployment source = access.requireDeployment(deploymentId);
         UUID projectId = source.getProjectId();
 
         Deployment latest = recorder.latest(projectId).orElse(source);
@@ -139,14 +137,12 @@ public class DeploymentService {
     }
 
     public DeploymentResponse get(UUID id) {
-        return mapper.toResponse(recorder.get(id));
+        return mapper.toResponse(access.requireDeployment(id));
     }
 
     /** A project's deployment history, newest first, optionally restricted to some statuses. */
     public DeploymentPage list(UUID projectId, Collection<DeploymentStatus> statuses, int page, int size) {
-        if (!projectRepository.existsById(projectId)) {
-            throw new ResourceNotFoundException("Project " + projectId + " not found");
-        }
+        access.requireProject(projectId);
         // The sort is fixed here: clients cannot choose it, only the page.
         Pageable pageable = PageRequest.of(
                 Math.max(page, 0),

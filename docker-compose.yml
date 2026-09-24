@@ -24,8 +24,12 @@ services:
       DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-deploykit}
       DB_USERNAME: ${POSTGRES_USER:-deploykit}
       DB_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (see .env.example)}
+      # Not `:?` here: Compose would then refuse `up postgres` too. The backend itself fails fast, with a clear message, if this is empty.
+      DEPLOYKIT_JWT_SECRET: ${DEPLOYKIT_JWT_SECRET:-}
+      DEPLOYKIT_ADMIN_EMAIL: ${DEPLOYKIT_ADMIN_EMAIL:-}
+      DEPLOYKIT_ADMIN_PASSWORD: ${DEPLOYKIT_ADMIN_PASSWORD:-}
     ports:
-      # Localhost only: the API has no authentication yet (Phase 9).
+      # Localhost only: put TLS in front of it (Phase 12) before exposing it to a network.
       - "127.0.0.1:8080:8080"
     depends_on:
       postgres:

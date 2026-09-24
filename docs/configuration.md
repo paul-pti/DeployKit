@@ -5,7 +5,8 @@ Configuration comes from environment variables and Spring profiles; nothing secr
 Docker Compose and the backend `local` profile.
 
 Docker Compose publishes Postgres (`5432`) and, with the `full` profile, the backend (`8080`) on `127.0.0.1` only, so
-nothing is reachable from the network. The API has no authentication yet.
+nothing is reachable from the network. The API requires a login (see [security.md](security.md)) but speaks plain
+HTTP: put TLS in front of it before exposing it.
 
 ## Backend
 
@@ -18,6 +19,9 @@ nothing is reachable from the network. The API has no authentication yet.
 | `HELM_BINARY` | deployments | Helm executable, default `helm` |
 | `DEPLOYKIT_REGISTRY` | deployments | Registry of derived images, default `ghcr.io` |
 | `DEPLOYKIT_DEPLOYMENT_ROLLOUT_TIMEOUT`, `..._POLL_INTERVAL`, `..._FAILURE_GRACE` | deployments | Defaults `5m`, `2s`, `30s` |
+| `DEPLOYKIT_JWT_SECRET` | authentication | **Required**, 32+ characters; the backend will not start without it. `openssl rand -base64 48` |
+| `DEPLOYKIT_JWT_TTL` | authentication | Token lifetime, default `60m` |
+| `DEPLOYKIT_ADMIN_EMAIL`, `DEPLOYKIT_ADMIN_PASSWORD` | authentication | First administrator, created at startup if absent (password 12+ characters). Optional once an admin exists |
 | `SERVER_PORT` | all | Default `8080` |
 | `LOG_LEVEL` | all | Level for `com.deploykit` (default `INFO`) |
 
