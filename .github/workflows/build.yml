@@ -158,7 +158,11 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # mode=max (every layer of every stage, for both platforms) used to overflow the 10 GB per-repo GitHub
+          # Actions cache: GitHub evicts a blob mid-build while buildx still references it, failing with
+          # "error writing layer blob: not_found". mode=min only caches the final image's own layers.
+          # ignore-error keeps a cache hiccup from failing the whole build.
+          cache-to: type=gha,mode=min,ignore-error=true
 
       - name: Summary
         env:
