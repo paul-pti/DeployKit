@@ -4,6 +4,11 @@ updates:
     directory: "/backend"
     schedule:
       interval: "weekly"
+    ignore:
+      # Major version deliberately declined (PR #21): the codebase is built and tested against Spring Boot 3.5.x;
+      # a Spring Boot 4 migration is its own project, not an automatic bump.
+      - dependency-name: "org.springframework.boot:spring-boot-starter-parent"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "npm"
     directory: "/frontend"
@@ -24,3 +29,10 @@ updates:
     directory: "/backend"
     schedule:
       interval: "weekly"
+    ignore:
+      # Major version deliberately declined (PR #12, #13): JDK 24 isn't an LTS release (the next LTS is 25), and
+      # the project intentionally pins the build and runtime images to JDK 21 (LTS) everywhere.
+      - dependency-name: "eclipse-temurin"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "maven"
+        update-types: ["version-update:semver-major"]
