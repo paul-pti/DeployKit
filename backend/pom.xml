@@ -19,7 +19,33 @@
     <properties>
         <java.version>21</java.version>
         <fabric8.version>8.0.0</fabric8.version>
+        <!-- Fabric8 8's default HTTP client (kubernetes-httpclient-vertx-5) needs Netty's newer transport API
+             (io.netty.channel.MultiThreadIoEventLoopGroup, introduced in 4.2). vertx-core:5.2.0 itself only manages
+             most Netty artifacts at 4.1.135.Final and leaves a couple of 4.2-only ones unmanaged, so without this
+             override Maven mediates most of the classpath back to 4.1.x and the client fails at runtime with
+             NoClassDefFoundError. Pinning the whole io.netty:* family to one 4.2.x release fixes it. -->
+        <netty.version>4.2.18.Final</netty.version>
+        <!-- Fabric8's kubernetes-model jars are compiled against jackson-annotations 2.22 (for @JsonApplyView);
+             Spring Boot's own dependency management pins it down to 2.21, which lacks that class. -->
+        <jackson-annotations.version>2.22</jackson-annotations.version>
     </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>io.netty</groupId>
+                <artifactId>netty-bom</artifactId>
+                <version>${netty.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>com.fasterxml.jackson.core</groupId>
+                <artifactId>jackson-annotations</artifactId>
+                <version>${jackson-annotations.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <dependencies>
         <dependency>
