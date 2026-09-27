@@ -83,3 +83,9 @@ The `observability` package (`DeploymentMetrics`, `AuthMetrics`) records Microme
 `DeploymentRecorder` and `AuthService`. Metrics are exposed at `/actuator/prometheus`; traces (Micrometer Tracing +
 OpenTelemetry, OTLP export, off by default) cover HTTP requests and the security filter chain. See
 [observability.md](observability.md) for the metrics themselves and the local Prometheus/Grafana/Jaeger stack.
+
+## Infrastructure
+
+`infrastructure/kind` is the local Kubernetes cluster used throughout development. `infrastructure/aws` is Terraform
+for the AWS equivalent (VPC, EKS, RDS, ECR, IAM) — see [docs/aws.md](aws.md) and
+[ADR 0008](adr/0008-terraform-hand-written-modules.md).

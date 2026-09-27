@@ -134,3 +134,20 @@ jobs:
           --set config.EXAMPLE=value
           --set-string secretEnv.EXAMPLE=value
           > /dev/null
+
+  terraform:
+    name: Terraform (fmt, validate)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infrastructure/aws
+    steps:
+      - uses: actions/checkout@v7
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+      - run: terraform fmt -check -recursive
+      - run: terraform init -backend=false
+      # No AWS credentials here on purpose: this only checks the configuration is syntactically and internally
+      # consistent, never plans or applies real infrastructure (see docs/aws.md).
+      - run: terraform validate
