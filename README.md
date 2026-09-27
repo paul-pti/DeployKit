@@ -46,7 +46,7 @@ The reasons behind these choices are recorded in [docs/adr](docs/adr).
 
 ## Quick start
 
-Prerequisites: Docker, Node 20.19+ and JDK 21.
+Prerequisites: Docker, Node 22+ and JDK 21.
 
 ```bash
 cp .env.example .env                    # then set POSTGRES_PASSWORD, DEPLOYKIT_JWT_SECRET (openssl rand -base64 48)
