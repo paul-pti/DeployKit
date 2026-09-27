@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "deploykit-app.fullname" . }}
+  labels:
+    {{- include "deploykit-app.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "deploykit-app.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "deploykit-app.labels" . | nindent 8 }}
+      annotations:
+        {{- if .Values.config }}
+        checksum/config: {{ toYaml .Values.config | sha256sum }}
+        {{- end }}
+        {{- if .Values.secretEnv }}
+        checksum/secret: {{ toYaml .Values.secretEnv | sha256sum }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: app
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.containerPort }}
+          {{- if or .Values.config .Values.secretEnv .Values.existingSecret }}
+          envFrom:
+            {{- if .Values.config }}
+            - configMapRef:
+                name: {{ include "deploykit-app.fullname" . }}
+            {{- end }}
+            {{- if or .Values.secretEnv .Values.existingSecret }}
+            - secretRef:
+                name: {{ include "deploykit-app.secretName" . }}
+            {{- end }}
+          {{- end }}
+          {{- if .Values.probes.enabled }}
+          readinessProbe:
+            {{- include "deploykit-app.probeAction" . | nindent 12 }}
+            initialDelaySeconds: {{ .Values.probes.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.periodSeconds }}
+          livenessProbe:
+            {{- include "deploykit-app.probeAction" . | nindent 12 }}
+            initialDelaySeconds: {{ add .Values.probes.initialDelaySeconds 10 }}
+            periodSeconds: {{ .Values.probes.periodSeconds }}
+          {{- end }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}

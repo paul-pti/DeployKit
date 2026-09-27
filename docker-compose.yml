@@ -1,0 +1,81 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-deploykit}
+      POSTGRES_USER: ${POSTGRES_USER:-deploykit}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (see .env.example)}
+    ports:
+      # Bound to localhost only: the database must not be reachable from the network.
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Optional: run the containerised backend with `docker compose --profile full up --build`
+  backend:
+    profiles: ["full"]
+    build: ./backend
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-deploykit}
+      DB_USERNAME: ${POSTGRES_USER:-deploykit}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (see .env.example)}
+      # Not `:?` here: Compose would then refuse `up postgres` too. The backend itself fails fast, with a clear message, if this is empty.
+      DEPLOYKIT_JWT_SECRET: ${DEPLOYKIT_JWT_SECRET:-}
+      DEPLOYKIT_ADMIN_EMAIL: ${DEPLOYKIT_ADMIN_EMAIL:-}
+      DEPLOYKIT_ADMIN_PASSWORD: ${DEPLOYKIT_ADMIN_PASSWORD:-}
+      # Only meaningful with --profile observability too; harmless (a few log lines) otherwise.
+      DEPLOYKIT_TRACING_SAMPLING: ${DEPLOYKIT_TRACING_SAMPLING:-0}
+      DEPLOYKIT_OTLP_ENDPOINT: http://jaeger:4318/v1/traces
+    ports:
+      # Localhost only: put TLS in front of it (Phase 12) before exposing it to a network.
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Optional: `docker compose --profile observability up -d`. Works whether the backend runs in a container
+  # (--profile full) or on the host with `./mvnw spring-boot:run` (see docs/observability.md).
+  prometheus:
+    profiles: ["observability"]
+    image: prom/prometheus:v3.0.1
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "127.0.0.1:9090:9090"
+    extra_hosts:
+      # host.docker.internal already works on Docker Desktop (macOS/Windows); this adds it on Linux too.
+      - "host.docker.internal:host-gateway"
+
+  grafana:
+    profiles: ["observability"]
+    image: grafana/grafana:11.4.0
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - prometheus
+
+  jaeger:
+    profiles: ["observability"]
+    image: jaegertracing/all-in-one:1.63.0
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "127.0.0.1:16686:16686" # UI
+      - "127.0.0.1:4318:4318"   # OTLP/HTTP, matches DEPLOYKIT_OTLP_ENDPOINT
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  postgres-data:
+  grafana-data:

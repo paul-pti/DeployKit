@@ -1,0 +1,68 @@
+spring:
+  application:
+    name: deploykit-backend
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+  jpa:
+    open-in-view: false
+    hibernate:
+      # Flyway owns the schema; Hibernate only validates that entities match it.
+      ddl-auto: validate
+  flyway:
+    enabled: true
+
+server:
+  port: ${SERVER_PORT:8080}
+  shutdown: graceful
+
+deploykit:
+  security:
+    jwt:
+      # Required, no default: at least 32 characters (openssl rand -base64 48). The backend refuses to start without it.
+      secret: ${DEPLOYKIT_JWT_SECRET:}
+      ttl: ${DEPLOYKIT_JWT_TTL:60m}
+    # First administrator, created at startup only while no user exists.
+    bootstrap-admin:
+      email: ${DEPLOYKIT_ADMIN_EMAIL:}
+      password: ${DEPLOYKIT_ADMIN_PASSWORD:}
+  helm:
+    binary: ${HELM_BINARY:helm}
+    # Relative to the working directory: the backend is started from backend/ locally.
+    chart-path: ${DEPLOYKIT_HELM_CHART_PATH:../helm/deploykit-app}
+  deployment:
+    registry: ${DEPLOYKIT_REGISTRY:ghcr.io}
+
+logging:
+  structured:
+    format:
+      console: ecs
+  level:
+    com.deploykit: ${LOG_LEVEL:INFO}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        # Enables a p95/p99 latency panel; low cardinality (a handful of stable route templates).
+        "[http.server.requests]": true
+  tracing:
+    # Off by default: without a collector listening, the exporter would just log connection failures. Set to 1.0
+    # (see docs/observability.md) once the observability stack (Jaeger) is running.
+    sampling:
+      probability: ${DEPLOYKIT_TRACING_SAMPLING:0}
+  otlp:
+    tracing:
+      endpoint: ${DEPLOYKIT_OTLP_ENDPOINT:http://localhost:4318/v1/traces}

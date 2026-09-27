@@ -1,0 +1,178 @@
+# Reusable pipeline: test, build and publish a container image to GitHub Container Registry.
+#
+# Call it from an application repository (see docs/github-actions.md):
+#
+#   jobs:
+#     image:
+#       permissions: { contents: read, packages: write }
+#       uses: paul-pti/DeployKit/.github/workflows/build.yml@main
+#
+# The image is published as ghcr.io/<owner>/<repo> with the full commit SHA and the branch name as tags, which is
+# exactly the image DeployKit deploys. `latest` is only added on the default branch, never used alone.
+name: Build and push image
+
+on:
+  workflow_call:
+    inputs:
+      working_directory:
+        description: Directory of the application; also the Docker build context
+        type: string
+        default: "."
+      dockerfile:
+        description: Dockerfile path, relative to working_directory
+        type: string
+        default: Dockerfile
+      image_suffix:
+        description: Appended to ghcr.io/<owner>/<repo>, e.g. "-api" when a repository builds several images
+        type: string
+        default: ""
+      test_command:
+        description: Shell command that runs the tests, in working_directory (skipped when empty)
+        type: string
+        default: ""
+      build_command:
+        description: Shell command that builds the application, in working_directory (skipped when empty)
+        type: string
+        default: ""
+      java_version:
+        description: Installs this JDK (Temurin) before the test and build commands when set
+        type: string
+        default: ""
+      node_version:
+        description: Installs this Node.js version before the test and build commands when set
+        type: string
+        default: ""
+      platforms:
+        description: Target platforms; arm64 is needed to run on Apple Silicon and Graviton clusters
+        type: string
+        default: linux/amd64,linux/arm64
+      push:
+        description: Push the image; set to false to only check that it builds (pull requests)
+        type: boolean
+        default: true
+    secrets:
+      registry_token:
+        description: Optional token with write:packages, only when the automatic GITHUB_TOKEN is not allowed to push
+        required: false
+    outputs:
+      image:
+        description: Image name without tag
+        value: ${{ jobs.build.outputs.image }}
+      sha:
+        description: Commit SHA the image was built from (also its tag)
+        value: ${{ jobs.build.outputs.sha }}
+      digest:
+        description: Digest of the pushed image
+        value: ${{ jobs.build.outputs.digest }}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.image.outputs.name }}
+      sha: ${{ github.sha }}
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Java
+        if: inputs.java_version != ''
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: ${{ inputs.java_version }}
+          cache: maven
+
+      - name: Set up Node.js
+        if: inputs.node_version != ''
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ inputs.node_version }}
+
+      - name: Run tests
+        if: inputs.test_command != ''
+        working-directory: ${{ inputs.working_directory }}
+        env:
+          COMMAND: ${{ inputs.test_command }}
+        run: bash -c "$COMMAND"
+
+      - name: Build the application
+        if: inputs.build_command != ''
+        working-directory: ${{ inputs.working_directory }}
+        env:
+          COMMAND: ${{ inputs.build_command }}
+        run: bash -c "$COMMAND"
+
+      # Registry paths must be lowercase, while owner and repository names may not be.
+      - name: Compute image name
+        id: image
+        env:
+          REPOSITORY: ${{ github.repository }}
+          SUFFIX: ${{ inputs.image_suffix }}
+        run: echo "name=$(echo "ghcr.io/${REPOSITORY}${SUFFIX}" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        if: inputs.push
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.registry_token || github.token }}
+
+      # Tags: the full commit SHA (immutable), the branch name (what DeployKit deploys by default),
+      # the git tag on releases, and `latest` on the default branch only, so `latest` is never the only tag.
+      - name: Compute tags and labels
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ steps.image.outputs.name }}
+          tags: |
+            type=sha,format=long,prefix=
+            type=ref,event=branch
+            type=ref,event=tag
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push image
+        id: push
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ inputs.working_directory }}
+          file: ${{ inputs.working_directory }}/${{ inputs.dockerfile }}
+          platforms: ${{ inputs.platforms }}
+          push: ${{ inputs.push }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          # mode=max (every layer of every stage, for both platforms) used to overflow the 10 GB per-repo GitHub
+          # Actions cache: GitHub evicts a blob mid-build while buildx still references it, failing with
+          # "error writing layer blob: not_found". mode=min only caches the final image's own layers.
+          # ignore-error keeps a cache hiccup from failing the whole build.
+          cache-to: type=gha,mode=min,ignore-error=true
+
+      - name: Summary
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+          PUSHED: ${{ inputs.push }}
+        run: |
+          {
+            if [ "$PUSHED" = "true" ]; then echo "### Image pushed"; else echo "### Image built (not pushed)"; fi
+            echo
+            echo '```'
+            echo "$TAGS"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
