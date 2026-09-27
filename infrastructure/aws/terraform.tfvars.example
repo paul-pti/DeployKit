@@ -1,0 +1,26 @@
+# Copy to terraform.tfvars (gitignored) and adjust, or set every value as a TF_VAR_<name> environment variable
+# instead — that keeps db_password out of a file entirely, which is the better option for that one.
+#
+# Applying this creates real, billable AWS resources (EKS, RDS, NAT gateway, ...). Review the plan before you
+# `terraform apply` it, and see docs/aws.md for the cost trade-offs each default makes.
+
+aws_region  = "eu-west-1"
+environment = "deploykit"
+
+azs                   = ["eu-west-1a", "eu-west-1b"]
+vpc_cidr              = "10.0.0.0/16"
+public_subnet_cidrs   = ["10.0.0.0/24", "10.0.1.0/24"]
+private_subnet_cidrs  = ["10.0.10.0/24", "10.0.11.0/24"]
+single_nat_gateway    = true
+
+kubernetes_version   = "1.31"
+node_instance_types  = ["t3.medium"]
+node_desired_size    = 2
+node_min_size        = 1
+node_max_size        = 3
+
+db_instance_class    = "db.t3.micro"
+db_allocated_storage = 20
+db_multi_az          = false
+# db_password has no default anywhere in this configuration on purpose: set it with
+# `export TF_VAR_db_password=$(openssl rand -base64 24)` rather than writing it here.
