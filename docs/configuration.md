@@ -8,6 +8,9 @@ Docker Compose publishes Postgres (`5432`) and, with the `full` profile, the bac
 nothing is reachable from the network. The API requires a login (see [security.md](security.md)) but speaks plain
 HTTP: put TLS in front of it before exposing it.
 
+On AWS ([docs/aws.md](aws.md)), the same variables come from Kubernetes `Secret`/`ConfigMap` values instead of `.env`;
+`DB_URL` is built from Terraform's `database_endpoint` output and the database name/username you chose.
+
 ## Backend
 
 | Variable | Used by | Purpose |

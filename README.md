@@ -3,13 +3,15 @@
 A self-service internal developer platform: point it at a GitHub repository, and DeployKit deploys the app to
 Kubernetes, with deployment history, logs and rollback.
 
-> **Status: Phase 11 of 12 complete.** You can sign in (roles `USER` and `ADMIN`), create projects, deploy them to
+> **Status: Phase 12 of 12 complete.** You can sign in (roles `USER` and `ADMIN`), create projects, deploy them to
 > Kubernetes through Helm, follow each deployment's history, read its logs and roll a deployment back from the
 > dashboard. Each user sees only their own projects. The API speaks plain HTTP: put TLS in front of it before exposing
 > it (see [docs/security.md](docs/security.md)). The test suite also covers real infrastructure: a real PostgreSQL
 > (Testcontainers), frontend components (Vitest) and full browser flows (Playwright) — see
 > [docs/testing.md](docs/testing.md). The backend exposes Prometheus metrics and OpenTelemetry traces, with an
-> optional local Grafana dashboard — see [docs/observability.md](docs/observability.md).
+> optional local Grafana dashboard — see [docs/observability.md](docs/observability.md). Terraform for running it on
+> AWS (VPC, EKS, RDS, ECR, IAM) is in `infrastructure/aws` — see [docs/aws.md](docs/aws.md); nothing there is applied
+> automatically, and applying it creates real, billable resources.
 
 ## How it works
 
@@ -73,6 +75,7 @@ The Compose ports are bound to `127.0.0.1`, so nothing is reachable from the net
 | Architecture decisions | [docs/adr](docs/adr) |
 | Authentication, roles, risks and what is still missing | [docs/security.md](docs/security.md) |
 | Metrics, traces and the local Grafana stack | [docs/observability.md](docs/observability.md) |
+| Running DeployKit on AWS (Terraform) | [docs/aws.md](docs/aws.md) |
 | Build pipeline, tags and secrets (CI/CD) | [docs/github-actions.md](docs/github-actions.md) |
 | Configuration and environment variables | [docs/configuration.md](docs/configuration.md) |
 | Local Kubernetes and the Helm chart | [docs/local-kubernetes.md](docs/local-kubernetes.md) |
@@ -85,7 +88,7 @@ The Compose ports are bound to `127.0.0.1`, so nothing is reachable from the net
 backend/         Spring Boot API (Maven)
 frontend/        React + Vite dashboard
 helm/            Generic Helm chart used to deploy applications
-infrastructure/  Local kind cluster config (Terraform for AWS in Phase 12)
+infrastructure/  Local kind cluster config, and Terraform for AWS (infrastructure/aws)
 .github/         GitHub Actions: CI and the reusable image pipeline
 docs/            Documentation and architecture decisions
 docker-compose.yml
@@ -104,4 +107,9 @@ docker-compose.yml
 9. ~~Authentication (JWT, USER/ADMIN)~~
 10. ~~Testing (Testcontainers, Vitest, Playwright)~~
 11. ~~Observability (Prometheus, Grafana, OpenTelemetry)~~
-12. AWS (Terraform: VPC, EKS, ECR, RDS, IAM)
+12. ~~AWS (Terraform: VPC, EKS, ECR, RDS, IAM)~~
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Found a security issue? See [SECURITY.md](SECURITY.md) instead of opening a
+public issue.

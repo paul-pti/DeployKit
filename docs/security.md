@@ -27,9 +27,10 @@ What protects DeployKit today (Phase 9), and what does not yet.
 | Credential guessing | Partly: 5 failures per client and 30 per email in 5 minutes, then 429. In memory, per instance |
 | User enumeration through login | Handled: same answer and comparable timing for unknown email and wrong password |
 | Secrets in Git or logs | Handled: JWT secret and passwords come from the environment; passwords and tokens are never logged |
-| Clear-text traffic | **Not handled**: run behind TLS (Phase 12: load balancer / ingress) before exposing the API |
-| Database reachable from the network | Compose binds to `127.0.0.1`; private subnet and RDS in Phase 12 |
+| Clear-text traffic | **Not handled**: the Terraform in `infrastructure/aws` does not set up a load balancer or TLS certificate; put one (ALB + ACM, or an ingress controller) in front of the API before exposing it |
+| Database reachable from the network | Handled once deployed with Terraform: RDS sits in private subnets with no public IP, reachable only from the EKS cluster's security group ([docs/aws.md](aws.md)). Compose still binds Postgres to `127.0.0.1` locally |
 | DeployKit's Kubernetes rights | **Not handled**: it uses the kubeconfig of whoever runs it. A least-privilege service account is needed |
+| AWS IAM permissions of the cluster and its nodes | Handled: the EKS cluster and node IAM roles ([docs/aws.md](aws.md)) carry only the minimum AWS-managed policies each needs, nothing broader |
 | Tenants sharing a cluster | **Not handled**: one namespace per project, but no quotas, `NetworkPolicy` or Pod Security yet |
 | Untrusted images | **Not handled**: any image reference is deployed. Needs an allow-list and scanning |
 | Audit trail | **Not handled**: who deployed what is not recorded |
