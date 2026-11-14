@@ -27,7 +27,7 @@
         <netty.version>4.2.18.Final</netty.version>
         <!-- Fabric8's kubernetes-model jars are compiled against jackson-annotations 2.22 (for @JsonApplyView);
              Spring Boot's own dependency management pins it down to 2.21, which lacks that class. -->
-        <jackson-annotations.version>2.22</jackson-annotations.version>
+        <jackson-annotations.version>2.23</jackson-annotations.version>
     </properties>
 
     <dependencyManagement>
